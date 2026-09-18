@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v18 Quota-Safe Sonic Mix</title>
+<title>AI DJ v19 Known-Only Ready</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v18 Quota-Safe Sonic Mix</h1>
-<p class="sub">Spotify QUOTA_EXCEEDED対策版。既知曲は端末キャッシュだけで組み、Spotify検索は未知曲に必要な最小回数だけ。完成セットはローカル保存し、Spotify反映は別ボタンにします。</p>
+<h1>AI DJ v19 Known-Only Ready</h1>
+<p class="sub">Spotify QUOTA_EXCEEDED対策版。既知100%なら端末キャッシュだけでローカル生成できます。Spotify反映はquota回復後に別ボタンで実行します。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -48,7 +48,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <span class="badge">2. セット設定</span>
 <div class="row" style="margin-top:12px">
 <div><label>曲数</label><input id="trackCount" type="number" min="10" max="50" value="30"></div>
-<div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="90" step="5" value="70"></div>
+<div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="100" step="5" value="100"></div>
 <div><label>Spotifyプレイリスト名</label><input id="setName" type="text" value="AI DJ NOW"></div>
 </div>
 <p class="small">未知曲は「同じアーティストだから」ではなく、18特徴の音響類似を優先します。曲順では同じ主アーティストの連続を最大3曲に制限します（Spotifyから作曲者クレジットを常に取得できないため、主アーティストを代理にしています）。</p>
