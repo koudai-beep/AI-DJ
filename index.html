@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v5</title>
+<title>AI DJ v6</title>
 <style>
 :root{color-scheme:dark;--card:#141821;--line:#2a3140;--muted:#98a2b3;--green:#1ed760;--blue:#66b3ff;--red:#ff8d8d}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080a0f,#0e1219);color:#f8fafc;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
@@ -21,8 +21,8 @@ button,a.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px 1
 </head>
 <body>
 <main>
-<h1>AI DJ v5</h1>
-<p class="sub">好みで選び、BPM・キー・Energyで「繋ぎやすい順」に並べる版。</p>
+<h1>AI DJ v6</h1>
+<p class="sub">ReccoBeats連携修正版。BPM・Energyを取得して「繋ぎやすい順」に並べます。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -54,7 +54,7 @@ button,a.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px 1
 <label class="chip"><input type="checkbox" class="lane" value="Game / Electronic">Game / Electronic</label>
 <label class="chip"><input type="checkbox" class="lane" value="Chill / Night">Chill / Night</label>
 </div>
-<p class="small">未知曲探索後、ReccoBeatsの音響特徴（BPM・キー・Energy）を使ってDJ向けに曲順を最適化します。データが無い曲はフォールバックで並べます。</p>
+<p class="small">未知曲探索後、ReccoBeatsの音響特徴（BPM・Energy）を使ってDJ向けに曲順を最適化します。データが無い曲はフォールバックで並べます。</p>
 <button id="generateBtn" class="primary" disabled>AIで自動選曲 → Spotifyプレイリスト作成</button>
 </section>
 
@@ -213,14 +213,59 @@ async function resolveMany(candidates,count,label,globalUris=new Set()){
 }
 async function mixFeaturesFor(x){
   try{
-    const id=x?.spotify?.id;if(!id)return x;
-    const r=await fetch(`https://api.reccobeats.com/v1/track/${encodeURIComponent(id)}/audio-features`);
-    if(!r.ok)return x;
-    const b=await r.json();
-    const f=b?.audioFeatures||b?.audio_features||b?.features||b||{};
-    const tempo=Number(f.tempo), key=Number(f.key), mode=Number(f.mode), energy=Number(f.energy), danceability=Number(f.danceability);
-    if(Number.isFinite(tempo)) x.mix={tempo,key:Number.isFinite(key)?key:null,mode:Number.isFinite(mode)?mode:null,energy:Number.isFinite(energy)?energy:null,danceability:Number.isFinite(danceability)?danceability:null};
-  }catch{}
+    const spotifyId=x?.spotify?.id;if(!spotifyId)return x;
+
+    // ReccoBeatsの音響特徴APIはSpotify IDを直接 /track/:id/audio-features
+    // に渡すのではなく、まず /track?ids=<spotify_id> でReccoBeats UUIDへ解決する。
+    const mapResp=await fetch(`https://api.reccobeats.com/v1/track?ids=${encodeURIComponent(spotifyId)}`,{
+      headers:{"Accept":"application/json"}
+    });
+    if(!mapResp.ok){
+      log(`Recco解決失敗 ${x.spotify.name}: HTTP ${mapResp.status}`);
+      return x;
+    }
+    const mapBody=await mapResp.json();
+    const tracks=Array.isArray(mapBody?.content)?mapBody.content:
+                 Array.isArray(mapBody?.tracks)?mapBody.tracks:
+                 Array.isArray(mapBody)?mapBody:[];
+    const rec=tracks[0];
+    const reccoId=rec?.id;
+    if(!reccoId){
+      log(`Recco未登録: ${x.spotify.name}`);
+      return x;
+    }
+
+    const featResp=await fetch(`https://api.reccobeats.com/v1/track/${encodeURIComponent(reccoId)}/audio-features`,{
+      headers:{"Accept":"application/json"}
+    });
+    if(!featResp.ok){
+      log(`音響特徴なし ${x.spotify.name}: HTTP ${featResp.status}`);
+      return x;
+    }
+    const f=await featResp.json();
+
+    const tempo=Number(f?.tempo);
+    const energy=Number(f?.energy);
+    const danceability=Number(f?.danceability);
+    const valence=Number(f?.valence);
+    const loudness=Number(f?.loudness);
+
+    if(Number.isFinite(tempo) && tempo>0){
+      x.mix={
+        tempo,
+        // ReccoBeatsの現行Audio Featuresレスポンスにはkey/modeが含まれないためnull。
+        key:null,
+        mode:null,
+        energy:Number.isFinite(energy)?energy:null,
+        danceability:Number.isFinite(danceability)?danceability:null,
+        valence:Number.isFinite(valence)?valence:null,
+        loudness:Number.isFinite(loudness)?loudness:null,
+        reccoId
+      };
+    }
+  }catch(e){
+    log(`音響特徴取得エラー ${x?.spotify?.name||""}: ${e.message}`);
+  }
   return x
 }
 async function enrichMixFeatures(items){
@@ -256,7 +301,7 @@ function bpmCost(a,b){
   return 1.25;
 }
 function keyCost(a,b){
-  const A=camelot(a),B=camelot(b);if(!A||!B)return .42;
+  const A=camelot(a),B=camelot(b);if(!A||!B)return .12;
   let dn=Math.abs(A.n-B.n);dn=Math.min(dn,12-dn);
   if(A.n===B.n&&A.side===B.side)return 0;
   if(A.n===B.n&&A.side!==B.side)return .08;
@@ -273,13 +318,13 @@ function energyCost(a,b){
 }
 function transitionCost(a,b){
   const sameArtist=alias((a.spotify.artists||[])[0]?.name||a.artist)===alias((b.spotify.artists||[])[0]?.name||b.artist);
-  return .50*bpmCost(a,b)+.28*keyCost(a,b)+.17*energyCost(a,b)+(sameArtist?.35:0);
+  return .62*bpmCost(a,b)+.10*keyCost(a,b)+.23*energyCost(a,b)+(sameArtist?.35:0);
 }
 function mixLabel(x){
   const bpm=x?.mix?.tempo?Math.round(x.mix.tempo):"?";
   const c=camelot(x),key=c?`${c.n}${c.side}`:"?";
   const en=Number.isFinite(x?.mix?.energy)?x.mix.energy.toFixed(2):"?";
-  return `${bpm} BPM / ${key} / E${en}`;
+  return `${bpm} BPM / E${en}${key!=="?"?` / ${key}`:""}`;
 }
 function chooseStart(pool){
   const withMix=pool.filter(x=>x.mix?.tempo);
@@ -355,7 +400,7 @@ async function generate(){
     await enrichMixFeatures([...resolvedKnown,...resolvedUnknown]);
     const seq=sequenceMixAware(resolvedKnown,resolvedUnknown,finalTotal);
     const name=$("#setName").value.trim()||"AI DJ NOW";
-    const pl=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:`AI DJ v5 mix-aware: known ${resolvedKnown.length}, discovery ${resolvedUnknown.length}`})});
+    const pl=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:`AI DJ v6 mix-aware: known ${resolvedKnown.length}, discovery ${resolvedUnknown.length}`})});
     await spotify(`/playlists/${encodeURIComponent(pl.id)}/items`,{method:"POST",body:JSON.stringify({uris:seq.map(x=>x.spotify.uri)})});
 
     tracksEl.innerHTML=seq.map((x,i)=>`<div class="track"><b>${i+1}. ${esc(x.spotify.name)}</b> <span class="${x.type==="known"?"k":"u"}">${x.type==="known"?"KNOWN":"DISCOVERY"}</span><br><span class="small">${esc((x.spotify.artists||[]).map(a=>a.name).join(", "))} · ${esc(mixLabel(x))}${x.seed?` · from ${esc(x.seed)}`:""}</span></div>`).join("");
