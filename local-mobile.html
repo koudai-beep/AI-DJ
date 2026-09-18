@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
-<title>AI DJ Local Mobile v0.1</title>
+<title>AI DJ Local Mobile v0.2</title>
 <style>
 :root{--bg:#0b1020;--card:#141b2d;--muted:#91a0b8;--text:#f7f8fb;--line:#29344d;--accent:#7dd3fc;--good:#86efac;--warn:#fbbf24}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1020,#10172a 45%,#0b1020);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
@@ -27,8 +27,8 @@ input[type=range]{width:100%}.tiny{font-size:11px;color:var(--muted)}
 <body>
 <main>
   <div class="hero">
-    <h1>AI DJ Local Mobile v0.1</h1>
-    <p class="sub">Androidブラウザだけで、手持ち音源を解析 → 曲順 → Cue → Transition → 自動ミックス再生。音源はサーバーへ送信しません。</p>
+    <h1>AI DJ Local Mobile v0.2</h1>
+    <p class="sub">Androidブラウザだけで、手持ち音源を解析 → 曲順 → Cue → DJ風Transition → 自動ミックス再生。EQ交換・Filter Sweep・Echo Out・Brake Drop・Tempo Syncを追加。音源はサーバーへ送信しません。</p>
   </div>
 
   <section class="card">
@@ -56,6 +56,32 @@ input[type=range]{width:100%}.tiny{font-size:11px;color:var(--muted)}
       <div><label class="small">1曲の目安</label><select id="playLen"><option value="90">1:30</option><option value="120" selected>2:00</option><option value="150">2:30</option></select></div>
       <div><label class="small">変化量</label><select id="variety"><option value="3">安定</option><option value="5" selected>標準</option><option value="8">多め</option></select></div>
     </div>
+    <div class="row3" style="margin-top:10px">
+      <div>
+        <label class="small">Transition強度</label>
+        <select id="fxStrength">
+          <option value="0.75">控えめ</option>
+          <option value="1" selected>標準</option>
+          <option value="1.25">派手</option>
+        </select>
+      </div>
+      <div>
+        <label class="small">Tempo Sync上限</label>
+        <select id="tempoLimit">
+          <option value="0.03">±3%</option>
+          <option value="0.05" selected>±5%</option>
+          <option value="0.08">±8%</option>
+        </select>
+      </div>
+      <div>
+        <label class="small">大BPM差の処理</label>
+        <select id="bigTempoMode">
+          <option value="auto" selected>自動</option>
+          <option value="echo">Echo Out優先</option>
+          <option value="brake">Brake Drop優先</option>
+        </select>
+      </div>
+    </div>
     <button id="planBtn" class="primary" disabled style="margin-top:10px">AI DJセットを作る</button>
     <div id="plan" style="margin-top:8px"><div class="status">解析後に作成できます。</div></div>
   </section>
@@ -67,7 +93,7 @@ input[type=range]{width:100%}.tiny{font-size:11px;color:var(--muted)}
       <button id="stopBtn" class="secondary" disabled>■ 停止</button>
     </div>
     <div id="now" class="now"><span class="status">停止中</span></div>
-    <div class="status">v0.1は、近いBPMなら8/16小節相当のEQクロスフェード。BPM差が大きい場合は無理に同期せず短いCut系Transitionに逃がします。</div>
+    <div class="status">v0.2は、BPM/Key/Energy差から Bass Swap / Filter Mix / Echo Out / Brake Drop を自動選択します。近いBPMでは最大±5%までTempo Syncして小節単位で重ねます。</div>
   </section>
 
   <section class="card">
@@ -356,21 +382,47 @@ function nearestCueOut(t,start,target,minP,maxP){
   return clamp(start+target,lo,hi);
 }
 function makePlan(seq,target){
+  const fxStrength=Number($("#fxStrength").value)||1;
+  const tempoLimit=Number($("#tempoLimit").value)||.05;
+  const bigTempoMode=$("#bigTempoMode").value||"auto";
+
   const items=seq.map((t,i)=>{
     const start=i===0?0:t.cueIn;
     const end=nearestCueOut(t,start,target,Math.max(50,target-30),target+30);
     return {track:t,start,end};
   });
+
   const transitions=[];
   for(let i=0;i<items.length-1;i++){
     const a=items[i].track,b=items[i+1].track,d=pairScore(a,b);
-    let type,bars;
-    if(d.td<=.025){type="EQ 16 bars";bars=16}
-    else if(d.td<=.065){type="EQ 8 bars";bars=8}
-    else{type="Cut / Echo";bars=0}
+    const ratio=a.bpm/b.bpm;
+    const syncable=Math.abs(ratio-1)<=tempoLimit;
+
+    let type,bars,cross;
+    if(syncable && d.key>=.82 && d.td<=.025){
+      type="Bass Swap 16";
+      bars=16;
+    }else if(syncable && d.td<=tempoLimit){
+      type="Filter Mix 8";
+      bars=8;
+    }else{
+      bars=0;
+      const prefer=bigTempoMode==="auto" ? (a.energy>=.62 ? "echo":"brake") : bigTempoMode;
+      type=prefer==="brake" ? "Brake Drop" : "Echo Out";
+    }
+
     const avg=Math.max(60,(a.bpm+d.bb)/2);
-    const cross=bars?clamp(bars*4*60/avg,3,24):1.3;
-    transitions.push({from:i,to:i+1,type,bars,cross,score:d.score,detail:d});
+    if(bars){
+      cross=clamp(bars*4*60/avg,4,28);
+    }else{
+      cross=type==="Brake Drop" ? 1.6*fxStrength : 2.4*fxStrength;
+    }
+
+    transitions.push({
+      from:i,to:i+1,type,bars,cross,score:d.score,detail:d,
+      syncRatio:syncable?clamp(ratio,1-tempoLimit,1+tempoLimit):1,
+      fxStrength
+    });
   }
   return {items,transitions,createdAt:new Date().toISOString()};
 }
@@ -389,7 +441,7 @@ function renderPlan(){
     const tr=plan.transitions[i];
     return `<div class="planItem"><div><span class="num">${i+1}</span><b>${esc(it.track.title)}</b></div>
       <div class="meta">${it.track.bpm.toFixed(1)} BPM · ${esc(it.track.camelot)} · ${fmt(it.start)} → ${fmt(it.end)}</div>
-      ${tr?`<div><span class="pill">${esc(tr.type)}</span><span class="pill">Mix ${Math.round(tr.score*100)}</span><span class="pill">${tr.cross.toFixed(1)}s</span></div>`:"<div><span class='pill'>END</span></div>"}
+      ${tr?`<div><span class="pill">${esc(tr.type)}</span><span class="pill">Mix ${Math.round(tr.score*100)}</span><span class="pill">${tr.cross.toFixed(1)}s</span>${Math.abs((tr.syncRatio||1)-1)>.002?`<span class="pill">Tempo ${(100*(tr.syncRatio-1)).toFixed(1)}%</span>`:""}</div>`:"<div><span class='pill'>END</span></div>"}
     </div>`;
   }).join("");
 }
@@ -432,7 +484,7 @@ $("#planBtn").addEventListener("click",()=>{
 });
 $("#exportBtn").addEventListener("click",()=>{
   if(!plan)return;
-  const out={version:"mobile-v0.1",items:plan.items.map((it,i)=>({index:i+1,title:it.track.title,bpm:it.track.bpm,key:it.track.key,camelot:it.track.camelot,start:it.start,end:it.end})),transitions:plan.transitions.map(t=>({from:t.from+1,to:t.to+1,type:t.type,crossfade_seconds:t.cross,score:t.score}))};
+  const out={version:"mobile-v0.2",items:plan.items.map((it,i)=>({index:i+1,title:it.track.title,bpm:it.track.bpm,key:it.track.key,camelot:it.track.camelot,start:it.start,end:it.end})),transitions:plan.transitions.map(t=>({from:t.from+1,to:t.to+1,type:t.type,crossfade_seconds:t.cross,score:t.score}))};
   const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="ai-dj-mobile-mix-plan.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 });
@@ -447,79 +499,191 @@ function stopMix(){
 }
 $("#stopBtn").addEventListener("click",stopMix);
 
-function gainCurve(from,to,n=96){
+function gainCurve(from,to,n=128){
   const a=new Float32Array(n);
-  for(let i=0;i<n;i++){const x=i/(n-1);const v=from+(to-from)*x;a[i]=Math.sin(v*Math.PI/2)}
+  for(let i=0;i<n;i++){
+    const x=i/(n-1);
+    const eq=Math.sin(x*Math.PI/2);
+    a[i]=from+(to-from)*eq;
+  }
   return a;
+}
+function makeEchoSend(ctx,input,master,amount=.32,delayTime=.24){
+  const send=ctx.createGain(),delay=ctx.createDelay(2.0),fb=ctx.createGain(),wet=ctx.createGain();
+  send.gain.value=amount;
+  delay.delayTime.value=delayTime;
+  fb.gain.value=.34;
+  wet.gain.value=.55;
+  input.connect(send).connect(delay).connect(wet).connect(master);
+  delay.connect(fb).connect(delay);
+  return {send,delay,fb,wet};
 }
 function createRuntime(buf,item,when,rate,incomingCross=0){
   const ctx=getCtx();
   const src=ctx.createBufferSource();src.buffer=buf;src.playbackRate.value=rate;
-  const low=ctx.createBiquadFilter();low.type="lowshelf";low.frequency.value=180;low.gain.value=incomingCross>0?-16:0;
+
+  const low=ctx.createBiquadFilter();low.type="lowshelf";low.frequency.value=180;low.gain.value=incomingCross>0?-18:0;
+  const hp=ctx.createBiquadFilter();hp.type="highpass";hp.frequency.value=24;hp.Q.value=.7;
+  const lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=20000;lp.Q.value=.7;
   const g=ctx.createGain();g.gain.value=incomingCross>0?0:1;
-  src.connect(low).connect(g).connect(ctx.destination);
+  const master=ctx.createGain();master.gain.value=.92;
+
+  src.connect(low).connect(hp).connect(lp).connect(g).connect(master).connect(ctx.destination);
+
   const dur=(item.end-item.start)/rate;
   src.start(when,item.start,Math.max(.1,item.end-item.start));
+
   if(incomingCross>0){
-    const curve=gainCurve(0,1);g.gain.setValueCurveAtTime(curve,when,incomingCross);
-    low.gain.setValueAtTime(-16,when);low.gain.linearRampToValueAtTime(0,when+incomingCross*.65);
+    g.gain.setValueCurveAtTime(gainCurve(0,1),when,incomingCross);
   }
-  activeNodes.push(src,low,g);
-  return {src,low,g,when,rate,dur,item};
+
+  activeNodes.push(src,low,hp,lp,g,master);
+  return {src,low,hp,lp,g,master,when,rate,dur,item};
+}
+function applyBassSwap(outRt,inRt,start,dur,strength=1){
+  const t0=start,t1=start+dur;
+  outRt.low.gain.setValueAtTime(0,t0);
+  outRt.low.gain.linearRampToValueAtTime(-22*strength,t0+dur*.58);
+  inRt.low.gain.setValueAtTime(-22*strength,t0);
+  inRt.low.gain.linearRampToValueAtTime(0,t0+dur*.58);
+
+  // Slight HP on outgoing toward end; incoming remains full.
+  outRt.hp.frequency.setValueAtTime(24,t0);
+  outRt.hp.frequency.exponentialRampToValueAtTime(160,t1);
+
+  outRt.g.gain.cancelScheduledValues(t0);
+  outRt.g.gain.setValueAtTime(1,t0);
+  outRt.g.gain.setValueCurveAtTime(gainCurve(1,0),t0,dur);
+}
+function applyFilterMix(outRt,inRt,start,dur,strength=1){
+  const t0=start,t1=start+dur;
+  outRt.hp.frequency.setValueAtTime(24,t0);
+  outRt.hp.frequency.exponentialRampToValueAtTime(420*strength,t1);
+
+  inRt.lp.frequency.setValueAtTime(Math.max(900,2400/strength),t0);
+  inRt.lp.frequency.exponentialRampToValueAtTime(20000,t0+dur*.72);
+
+  outRt.low.gain.setValueAtTime(0,t0);
+  outRt.low.gain.linearRampToValueAtTime(-16*strength,t0+dur*.62);
+  inRt.low.gain.setValueAtTime(-14*strength,t0);
+  inRt.low.gain.linearRampToValueAtTime(0,t0+dur*.62);
+
+  outRt.g.gain.cancelScheduledValues(t0);
+  outRt.g.gain.setValueAtTime(1,t0);
+  outRt.g.gain.setValueCurveAtTime(gainCurve(1,0),t0,dur);
+}
+function applyEchoOut(outRt,inRt,start,dur,strength=1){
+  const ctx=getCtx();
+  const fx=makeEchoSend(ctx,outRt.lp,outRt.master,.26*strength,.19);
+  activeNodes.push(fx.send,fx.delay,fx.fb,fx.wet);
+
+  const t0=start,t1=start+dur;
+  fx.send.gain.setValueAtTime(.08,t0);
+  fx.send.gain.linearRampToValueAtTime(.48*strength,t0+dur*.45);
+
+  outRt.hp.frequency.setValueAtTime(24,t0);
+  outRt.hp.frequency.exponentialRampToValueAtTime(700*strength,t1);
+
+  outRt.g.gain.cancelScheduledValues(t0);
+  outRt.g.gain.setValueAtTime(1,t0);
+  outRt.g.gain.exponentialRampToValueAtTime(.001,t0+dur*.72);
+
+  inRt.g.gain.cancelScheduledValues(t0);
+  inRt.g.gain.setValueAtTime(.001,t0);
+  inRt.g.gain.exponentialRampToValueAtTime(1,t0+dur*.85);
+}
+function applyBrakeDrop(outRt,inRt,start,dur,strength=1){
+  const t0=start,t1=start+dur;
+  const r0=outRt.src.playbackRate.value;
+  outRt.src.playbackRate.setValueAtTime(r0,t0);
+  // "brake": slow outgoing deck aggressively then cut.
+  outRt.src.playbackRate.exponentialRampToValueAtTime(Math.max(.38,.58/strength),t0+dur*.78);
+
+  outRt.lp.frequency.setValueAtTime(20000,t0);
+  outRt.lp.frequency.exponentialRampToValueAtTime(900,t0+dur*.78);
+  outRt.g.gain.cancelScheduledValues(t0);
+  outRt.g.gain.setValueAtTime(1,t0);
+  outRt.g.gain.exponentialRampToValueAtTime(.001,t0+dur*.82);
+
+  // Incoming is held then punched in near the end.
+  inRt.g.gain.cancelScheduledValues(t0);
+  inRt.g.gain.setValueAtTime(.001,t0);
+  inRt.g.gain.setValueAtTime(.001,t0+dur*.62);
+  inRt.g.gain.exponentialRampToValueAtTime(1,t1);
+  inRt.hp.frequency.setValueAtTime(180,t0);
+  inRt.hp.frequency.exponentialRampToValueAtTime(24,t1);
 }
 async function scheduleChain(i,rt,token){
   if(token!==playToken||!plan)return;
   const item=plan.items[i];
   $("#now").innerHTML=`<div class="tiny">NOW ${i+1}/${plan.items.length}</div><b>${esc(item.track.title)}</b><div class="meta">${item.track.bpm.toFixed(1)} BPM · ${esc(item.track.camelot)}</div>`;
+
   if(i>=plan.items.length-1){
     const wait=Math.max(0,(rt.when+rt.dur-getCtx().currentTime)*1000);
-    setTimeout(()=>{if(token===playToken)stopMix()},wait+300);
+    setTimeout(()=>{if(token===playToken)stopMix()},wait+500);
     return;
   }
+
   const tr=plan.transitions[i],nextItem=plan.items[i+1];
   try{
     const nextBuf=await decodeFile(nextItem.track.file);
     if(token!==playToken)return;
-    let rate=1;
-    const rawRatio=item.track.bpm/nextItem.track.bpm;
-    if(tr.type!=="Cut / Echo" && rawRatio>=.97 && rawRatio<=1.03) rate=rawRatio;
-    const transStart=rt.when+rt.dur-tr.cross;
-    const nextRt=createRuntime(nextBuf,nextItem,transStart,rate,tr.cross);
 
-    // outgoing equal-power fade + bass swap
-    const curve=gainCurve(1,0);
-    rt.g.gain.setValueCurveAtTime(curve,transStart,tr.cross);
-    rt.low.gain.setValueAtTime(0,transStart);
-    rt.low.gain.linearRampToValueAtTime(-16,transStart+tr.cross*.65);
-
-    if(tr.type==="Cut / Echo"){
-      // very short cut; avoid forcing beatmatch
-      rt.g.gain.cancelScheduledValues(transStart);
-      rt.g.gain.setValueAtTime(1,transStart);
-      rt.g.gain.exponentialRampToValueAtTime(.001,transStart+Math.max(.18,tr.cross*.65));
+    let nextRate=1;
+    if((tr.type==="Bass Swap 16"||tr.type==="Filter Mix 8") && Math.abs((tr.syncRatio||1)-1)>.001){
+      nextRate=tr.syncRatio;
     }
-    log(`${item.track.title} → ${nextItem.track.title} / ${tr.type} / ${tr.cross.toFixed(1)}s`);
 
-    const ms=Math.max(50,(transStart-getCtx().currentTime)*1000+250);
+    const transStart=rt.when+rt.dur-tr.cross;
+    const nextRt=createRuntime(nextBuf,nextItem,transStart,nextRate,tr.cross);
+    const strength=tr.fxStrength||1;
+
+    if(tr.type==="Bass Swap 16"){
+      applyBassSwap(rt,nextRt,transStart,tr.cross,strength);
+    }else if(tr.type==="Filter Mix 8"){
+      applyFilterMix(rt,nextRt,transStart,tr.cross,strength);
+    }else if(tr.type==="Echo Out"){
+      applyEchoOut(rt,nextRt,transStart,tr.cross,strength);
+    }else{
+      applyBrakeDrop(rt,nextRt,transStart,tr.cross,strength);
+    }
+
+    // After a beatmatched transition, gently return the incoming track to its native tempo.
+    if(nextRate!==1){
+      const settle=Math.min(12,Math.max(4,tr.cross*.55));
+      const settleStart=transStart+tr.cross;
+      nextRt.src.playbackRate.setValueAtTime(nextRate,settleStart);
+      nextRt.src.playbackRate.linearRampToValueAtTime(1,settleStart+settle);
+    }
+
+    log(`${item.track.title} → ${nextItem.track.title} / ${tr.type} / ${tr.cross.toFixed(1)}s / rate ${nextRate.toFixed(3)}`);
+
+    const ms=Math.max(50,(transStart-getCtx().currentTime)*1000+220);
     setTimeout(()=>{if(token===playToken)scheduleChain(i+1,nextRt,token)},ms);
   }catch(err){
-    log(`playback error: ${err.message}`);stopMix();
+    log(`playback error: ${err.message}`);
+    stopMix();
   }
 }
 $("#playBtn").addEventListener("click",async()=>{
   if(!plan||!plan.items.length)return;
   stopMix();
   const token=++playToken;
-  const ctx=getCtx();await ctx.resume();
-  $("#playBtn").disabled=true;$("#stopBtn").disabled=false;
+  const ctx=getCtx();
+  await ctx.resume();
+  $("#playBtn").disabled=true;
+  $("#stopBtn").disabled=false;
   try{
     const first=plan.items[0];
     const buf=await decodeFile(first.track.file);
     if(token!==playToken)return;
-    const when=ctx.currentTime+.18;
+    const when=ctx.currentTime+.22;
     const rt=createRuntime(buf,first,when,1,0);
     scheduleChain(0,rt,token);
-  }catch(err){log(`start error: ${err.message}`);stopMix()}
+  }catch(err){
+    log(`start error: ${err.message}`);
+    stopMix();
+  }
 });
 </script>
 </body>
