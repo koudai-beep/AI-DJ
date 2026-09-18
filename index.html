@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v20 Transition Guard</title>
+<title>AI DJ v21 Crate Selector</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v20 Transition Guard</h1>
-<p class="sub">繋ぎ品質強化版。大きすぎるBPM差・遠いCamelot Key・質感差を強く減点し、各トランジションの理由をログに表示します。</p>
+<h1>AI DJ v21 Crate Selector</h1>
+<p class="sub">候補を多めに集めて「繋ぎにくい曲を落としてから」30曲を選ぶ版。Sonic特徴・BPM・Key・Energyを使い、悪い繋ぎを末尾に押し付けません。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -51,7 +51,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="100" step="5" value="100"></div>
 <div><label>Spotifyプレイリスト名</label><input id="setName" type="text" value="AI DJ NOW"></div>
 </div>
-<p class="small">未知曲は「同じアーティストだから」ではなく、18特徴の音響類似を優先します。曲順では同じ主アーティストの連続を最大3曲に制限します（Spotifyから作曲者クレジットを常に取得できないため、主アーティストを代理にしています）。</p>
+<p class="small">出力30曲なら、既知曲は最大50曲前後を候補として解析し、繋ぎにくい曲を外してからセットを組みます。未知曲がquotaで取れない場合は既知曲で自動補充します。同じ主アーティストは最大3曲連続まで。</p>
 
 <div style="margin-top:12px"><label>既知曲のレーン</label>
 <div class="lanes">
@@ -450,7 +450,7 @@ function cachedUnknownCandidate(c){
   const hit=spotifyMapGet(c);
   return hit?{...c,spotify:hit,matchScore:1,fromSpotifyCache:true}:null;
 }
-const PENDING_SET_KEY="ai_dj_pending_set_v20";
+const PENDING_SET_KEY="ai_dj_pending_set_v21";
 function savePendingSet(name,seq,summary){
   const payload={
     ts:Date.now(),name,summary,
@@ -478,7 +478,7 @@ function renderPendingSet(p){
     if(i>0){
       const m=pairMetrics(seq[i-1],x),score=m.score;
       mixScores.push(score);
-      mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
+      mixLine=` · Mix ${score}/100 · Sonic ${Math.round(clamp(m.sonic,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
     }
     const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
     const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -661,107 +661,127 @@ similarities for very different tracks. Instead, v20 builds per-field statistics
 current DJ set and compares only descriptor-style fields after standardisation.
 */
 let EMBED_STATS=null;
-const DIRECT_FEATURE_RE=/(bpm|tempo|key|mode|energy|loud|dance|valence|acoustic|instrument|speech|liveness)/i;
 
+function getEmbeddingVector(x){
+  const e=x?.embedding;
+  if(!e)return null;
+  if(Array.isArray(e.embedding))return {
+    values:e.embedding,
+    mask:Array.isArray(e.embedding_mask)?e.embedding_mask:e.embedding.map(()=>1),
+    fields:Array.isArray(e.fields)?e.fields:e.embedding.map((_,i)=>`f${i}`)
+  };
+  // Be tolerant of wrappers if FreqBlog changes/varies the response envelope.
+  if(e.data&&Array.isArray(e.data.embedding))return {
+    values:e.data.embedding,
+    mask:Array.isArray(e.data.embedding_mask)?e.data.embedding_mask:e.data.embedding.map(()=>1),
+    fields:Array.isArray(e.data.fields)?e.data.fields:e.data.embedding.map((_,i)=>`f${i}`)
+  };
+  return null;
+}
 function prepareEmbeddingStats(items){
-  const rows=items.filter(x=>x?.embedding?.embedding&&x.embedding?.fields);
+  const rows=items.map(x=>({x,v:getEmbeddingVector(x)})).filter(r=>r.v?.values?.length);
   if(!rows.length){EMBED_STATS=null;return}
-  const fields=rows[0].embedding.fields||[];
+
+  const dims=Math.max(...rows.map(r=>r.v.values.length));
   const stats={};
-  for(let i=0;i<fields.length;i++){
-    const name=String(fields[i]||`f${i}`);
-    if(DIRECT_FEATURE_RE.test(name))continue;
+  const fields=Array.from({length:dims},(_,i)=>rows.find(r=>r.v.fields?.[i])?.v.fields?.[i]||`f${i}`);
+
+  for(let i=0;i<dims;i++){
     const vals=[];
-    for(const x of rows){
-      const e=x.embedding,mask=e.embedding_mask||e.embedding.map(()=>1),v=Number(e.embedding?.[i]);
-      if(mask[i]&&Number.isFinite(v))vals.push(v);
+    for(const r of rows){
+      const val=Number(r.v.values[i]);
+      if(r.v.mask?.[i] && Number.isFinite(val))vals.push(val);
     }
-    if(vals.length<Math.max(6,Math.ceil(rows.length*.35)))continue;
+    if(vals.length<Math.max(5,Math.ceil(rows.length*.25)))continue;
     const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
     const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length;
     const sd=Math.sqrt(variance);
-    if(sd>1e-7)stats[i]={name,mean,sd};
+    if(sd>1e-8)stats[i]={name:String(fields[i]||`f${i}`),mean,sd};
   }
-  EMBED_STATS={fields,stats};
+  EMBED_STATS={fields,stats,rowCount:rows.length};
 }
-function descriptorSimilarity(a,b){
-  const A=a?.embedding,B=b?.embedding;
-  if(!A?.embedding||!B?.embedding||!EMBED_STATS)return null;
-  const am=A.embedding_mask||A.embedding.map(()=>1),bm=B.embedding_mask||B.embedding.map(()=>1);
+function sonicSimilarity(a,b){
+  const A=getEmbeddingVector(a),B=getEmbeddingVector(b);
+  if(!A||!B||!EMBED_STATS)return null;
   let sum=0,n=0;
   for(const [idxS,st] of Object.entries(EMBED_STATS.stats)){
-    const i=Number(idxS),av=Number(A.embedding[i]),bv=Number(B.embedding[i]);
-    if(!am[i]||!bm[i]||!Number.isFinite(av)||!Number.isFinite(bv))continue;
-    const za=(av-st.mean)/st.sd,zb=(bv-st.mean)/st.sd;
-    const d=Math.min(4,Math.abs(za-zb));
+    const i=Number(idxS),av=Number(A.values[i]),bv=Number(B.values[i]);
+    if(!A.mask?.[i]||!B.mask?.[i]||!Number.isFinite(av)||!Number.isFinite(bv))continue;
+    const d=Math.min(4,Math.abs((av-st.mean)/st.sd-(bv-st.mean)/st.sd));
     sum+=d*d;n++;
   }
-  if(n<2)return null;
+  if(n<3)return null;
   const rms=Math.sqrt(sum/n);
-  // 0 distance -> 100%; ~1 standard deviation RMS -> ~45%; ~2 -> ~20%.
-  return Math.exp(-0.8*rms);
+  // Local-set z-score approximation of FreqBlog's catalogue-normalised 18-feature similarity.
+  return Math.exp(-0.72*rms);
 }
-function fallbackTextureSimilarity(a,b){
+function fallbackSonicSimilarity(a,b){
   const costs=[
     scalarCost(a,b,"acousticness",1.6),
     scalarCost(a,b,"instrumentalness",1.35),
-    scalarCost(a,b,"danceability",1.3),
-    scalarCost(a,b,"valence",1.0)
+    scalarCost(a,b,"danceability",1.25),
+    scalarCost(a,b,"valence",1.0),
+    scalarCost(a,b,"energy",1.2)
   ];
   return 1-clamp(costs.reduce((x,y)=>x+y,0)/costs.length);
 }
-function textureSimilarity(a,b){
-  const d=descriptorSimilarity(a,b);
-  return d===null?fallbackTextureSimilarity(a,b):d;
+function effectiveSonicSimilarity(a,b){
+  const s=sonicSimilarity(a,b);
+  return s===null?fallbackSonicSimilarity(a,b):s;
 }
 function pairMetrics(a,b){
-  const texture=textureSimilarity(a,b);
-  const tc=1-clamp(texture,0,1);
+  const sonic=effectiveSonicSimilarity(a,b);
+  const sc=1-clamp(sonic,0,1);
   const bd=octaveBpmDelta(a,b),bc=bpmCost(a,b),kc=keyCost(a,b);
   const ec=scalarCost(a,b,"energy",1.55);
   const dc=scalarCost(a,b,"danceability",1.35);
   const spectral=(scalarCost(a,b,"acousticness",1.6)+scalarCost(a,b,"instrumentalness",1.35))/2;
   const gm=genreMoodCost(a,b);
 
-  // Base weighting. BPM and harmonic compatibility are deliberately stronger than v19.
-  let cost=.24*tc+.27*bc+.19*kc+.11*ec+.05*dc+.09*spectral+.05*gm;
+  // Sonic score already contains some BPM/key/energy information, so direct DJ constraints remain dominant.
+  let cost=.20*sc+.29*bc+.20*kc+.13*ec+.05*dc+.08*spectral+.05*gm;
 
-  // Hard guards: these represent transitions a human DJ would usually avoid as a long blend.
   let hardPenalty=0;
   if(bd!==null){
-    if(bd>25)hardPenalty+=.42;
-    else if(bd>18)hardPenalty+=.27;
-    else if(bd>14)hardPenalty+=.12;
+    if(bd>25)hardPenalty+=.44;
+    else if(bd>18)hardPenalty+=.29;
+    else if(bd>14)hardPenalty+=.13;
   }
-  if(kc>=1.0)hardPenalty+=.16;
+  if(kc>=1.0)hardPenalty+=.17;
   else if(kc>=.58)hardPenalty+=.07;
-  if(texture<.22)hardPenalty+=.16;
-  else if(texture<.35)hardPenalty+=.07;
+
+  const ea=a?.mix?.energy,eb=b?.mix?.energy;
+  const energyDelta=(Number.isFinite(ea)&&Number.isFinite(eb))?Math.abs(ea-eb):null;
+  if(energyDelta!==null){
+    if(energyDelta>.70)hardPenalty+=.24;
+    else if(energyDelta>.50)hardPenalty+=.10;
+  }
+
+  if(sonic<.20)hardPenalty+=.16;
+  else if(sonic<.32)hardPenalty+=.07;
 
   cost=clamp(cost+hardPenalty,0,1.35);
-
-  // Human-readable score. A giant BPM jump can never masquerade as a high score.
   let score=Math.round((1-clamp(cost,0,1))*100);
-  if(bd!==null&&bd>25)score=Math.min(score,35);
-  else if(bd!==null&&bd>18)score=Math.min(score,52);
-  else if(bd!==null&&bd>14)score=Math.min(score,68);
-  if(kc>=1.0)score=Math.min(score,62);
+
+  if(bd!==null&&bd>25)score=Math.min(score,32);
+  else if(bd!==null&&bd>18)score=Math.min(score,50);
+  else if(bd!==null&&bd>14)score=Math.min(score,66);
+  if(kc>=1.0)score=Math.min(score,60);
+  if(energyDelta!==null&&energyDelta>.70)score=Math.min(score,52);
 
   return {
-    cost,score,texture,
-    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,
+    cost,score,sonic,
+    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,energyDelta,
     keyLabel:keyLabel(a,b),hardPenalty
   };
 }
 function transitionLogLine(a,b,index){
   const m=pairMetrics(a,b);
   const bpm=m.bpmDelta===null?"?":m.bpmDelta.toFixed(1);
-  const tex=Math.round(clamp(m.texture,0,1)*100);
-  const ea=Number.isFinite(a?.mix?.energy)?a.mix.energy:null;
-  const eb=Number.isFinite(b?.mix?.energy)?b.mix.energy:null;
-  const ed=(ea!==null&&eb!==null)?Math.abs(ea-eb).toFixed(2):"?";
+  const sonic=Math.round(clamp(m.sonic,0,1)*100);
+  const ed=m.energyDelta===null?"?":m.energyDelta.toFixed(2);
   const guard=m.hardPenalty>0?` · penalty +${m.hardPenalty.toFixed(2)}`:"";
-  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Texture ${tex}% | ΔEnergy ${ed}${guard}`;
+  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Sonic ${sonic}% | ΔEnergy ${ed}${guard}`;
 }
 function routeCost(seq){let c=0;for(let i=1;i<seq.length;i++)c+=pairMetrics(seq[i-1],seq[i]).cost;return c}
 function chooseStart(pool){
@@ -787,7 +807,8 @@ function greedySequence(items){
     const safe=evaluated.filter(z=>
       (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
       z.m.keyCost<1.0 &&
-      z.m.texture>=.22
+      z.m.sonic>=.20 &&
+      (z.m.energyDelta===null||z.m.energyDelta<=.70)
     );
     const pool=safe.length?safe:evaluated;
 
@@ -815,7 +836,7 @@ function severeTransitionCount(seq){
   let n=0;
   for(let i=1;i<seq.length;i++){
     const m=pairMetrics(seq[i-1],seq[i]);
-    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.texture<.22)n++;
+    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.sonic<.20||(m.energyDelta!==null&&m.energyDelta>.70))n++;
   }
   return n;
 }
@@ -882,6 +903,58 @@ async function writePlaylist(name,seq){
   return p;
 }
 
+
+function connectivityScore(x,pool){
+  const vals=pool.filter(y=>y!==x).map(y=>pairMetrics(x,y).cost).sort((a,b)=>a-b);
+  if(!vals.length)return 9;
+  const k=Math.min(8,vals.length);
+  const near=vals.slice(0,k).reduce((a,b)=>a+b,0)/k;
+  const weightBonus=Math.min(.08,Math.max(0,Number(x.weight||1)-1)*.012);
+  return near-weightBonus;
+}
+function chooseKnownSubset(pool,count,required=[]){
+  if(pool.length<=count)return pool.slice(0,count);
+
+  // Required discovery tracks are not here; this scores known candidates on how many clean exits they have.
+  const context=[...pool,...required];
+  const ranked=pool.map(x=>({x,s:connectivityScore(x,context)})).sort((a,b)=>a.s-b.s);
+
+  // Keep a wider top band, then greedily build a chain-length subset so a "dead-end" song isn't forced in.
+  const band=ranked.slice(0,Math.min(ranked.length,Math.max(count+10,Math.ceil(count*1.45)))).map(z=>z.x);
+  const chosen=[];
+  let cur=chooseStart(band);
+  if(cur){chosen.push(cur)}
+  let remaining=band.filter(x=>x!==cur);
+
+  while(chosen.length<count&&remaining.length){
+    let allowed=remaining.filter(x=>!wouldMakeFour(chosen,x));
+    if(!allowed.length)allowed=remaining;
+
+    const evaluated=allowed.map(x=>({x,m:pairMetrics(chosen.at(-1),x)}));
+    const safe=evaluated.filter(z=>
+      (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
+      z.m.keyCost<1.0 &&
+      z.m.sonic>=.20 &&
+      (z.m.energyDelta===null||z.m.energyDelta<=.70)
+    );
+    const pickPool=safe.length?safe:evaluated;
+    pickPool.sort((a,b)=>a.m.cost-b.m.cost || connectivityScore(a.x,band)-connectivityScore(b.x,band));
+    const next=pickPool[0]?.x;if(!next)break;
+    chosen.push(next);remaining=remaining.filter(x=>x!==next);
+  }
+
+  // If a strict-safe chain could not reach count, fill from globally connected tracks.
+  if(chosen.length<count){
+    for(const z of ranked){
+      if(chosen.length>=count)break;
+      if(chosen.includes(z.x))continue;
+      if(wouldMakeFour(chosen,z.x))continue;
+      chosen.push(z.x);
+    }
+  }
+  return chosen.slice(0,count);
+}
+
 /* ---------- main ---------- */
 async function generate(){
   generateBtn.disabled=true;playlistLink.style.display="none";tracksEl.innerHTML="";summaryEl.textContent="生成中…";
@@ -889,57 +962,93 @@ async function generate(){
     proxyConfig();
     const lanes=selectedLanes();if(!lanes.size)throw new Error("既知曲レーンを1つ以上選んでください");
     const total=Math.min(50,Math.max(10,Number($("#trackCount").value)||30));
-    const ratio=Number($("#knownRatio").value)/100,knownN=Math.round(total*ratio),unknownN=total-knownN;
-    const globalUris=new Set();
+    const ratio=Number($("#knownRatio").value)/100,knownTarget=Math.round(total*ratio),unknownTarget=total-knownTarget;
 
     logEl.textContent="";
-    log(`ローカル生成開始 ${total}曲 / 既知${knownN} / 未知${unknownN}`);
+    log(`ローカル生成開始 ${total}曲 / 目標 既知${knownTarget} / 未知${unknownTarget}`);
     log(`Spotify対応表キャッシュ: ${spotifyMapCount()}件`);
 
-    // Zero Spotify Search calls for known tracks.
-    let known=pickCachedKnown(knownN,lanes);
-    if(known.length<knownN){
-      throw new Error(`Spotify対応表に既知曲が${known.length}/${knownN}しかありません。「既存AI DJプレイリストからSpotify対応表を作る」をquotaが使える時に1回実行してください。`);
-    }
-    known.forEach(x=>globalUris.add(x.spotify.uri));
-    log(`既知 ${known.length}曲をSpotify API検索なしで確保`);
-
-    progressEl.textContent="既知曲のFreqBlog音響情報を取得中…";
-    await enrichFreqBlog(known,"既知");
-    const withAudio=known.filter(x=>x.mix?.tempo);
-    if(withAudio.length<Math.max(10,known.length-4)){
-      log(`音響情報不足 ${withAudio.length}/${known.length}。取得できた曲を優先します`);
-      known=[...withAudio,...known.filter(x=>!x.mix?.tempo)].slice(0,knownN);
+    const allCached=cachedKnownPool(lanes);
+    if(allCached.length<Math.min(total,knownTarget)){
+      throw new Error(`選択レーンのSpotify対応済み既知曲が${allCached.length}曲しかありません`);
     }
 
-    progressEl.textContent="未知曲を音そのものの近さから探索中…";
-    const unknown=await discoverUnknown(known,unknownN,globalUris);
-    if(unknown.length<unknownN){
-      log(`未知曲は ${unknown.length}/${unknownN}。Spotify quotaを使い切っている間は、キャッシュ/Spotify-ID直結で確保できた分だけ使用します。`);
+    // Analyze a wider crate than the final set. This is the key v21 change.
+    const candidateN=Math.min(allCached.length,Math.max(total+14,Math.ceil(total*1.65)));
+    let knownCandidates=pickCachedKnown(candidateN,lanes);
+    log(`既知候補を ${knownCandidates.length}曲 確保（最終セットより多めに解析）`);
+
+    progressEl.textContent="既知候補のFreqBlog音響情報を取得中…";
+    await enrichFreqBlog(knownCandidates,"既知候補");
+
+    // Prefer tracks with usable DJ metadata; don't force 404/no-feature tracks into the set.
+    let goodKnown=knownCandidates.filter(x=>x.mix?.tempo&&x.mix?.camelot);
+    let partialKnown=knownCandidates.filter(x=>x.mix?.tempo&&!x.mix?.camelot);
+    let badKnown=knownCandidates.filter(x=>!x.mix?.tempo);
+
+    if(goodKnown.length<knownTarget){
+      goodKnown=[...goodKnown,...partialKnown];
+    }
+    if(goodKnown.length<knownTarget){
+      log(`警告: 十分な音響情報がある既知候補 ${goodKnown.length}/${knownTarget}`);
+      goodKnown=[...goodKnown,...badKnown];
+    }
+    log(`既知候補 quality: full ${knownCandidates.filter(x=>x.mix?.tempo&&x.mix?.camelot).length} / partial ${partialKnown.length} / none ${badKnown.length}`);
+
+    // Embeddings for the wider crate so Sonic z-scores are meaningful.
+    progressEl.textContent="候補のSonic embeddingを取得中…";
+    await enrichEmbeddings(goodKnown);
+    prepareEmbeddingStats(goodKnown);
+    const dims=EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0;
+    log(`Sonic比較: embedding ${EMBED_STATS?.rowCount||0}曲 / 有効 ${dims}次元`);
+    if(EMBED_STATS?.fields?.length)log(`Embedding fields: ${EMBED_STATS.fields.join(", ")}`);
+
+    // Use a well-connected subset as discovery seeds.
+    let seedKnown=chooseKnownSubset(goodKnown,Math.min(knownTarget,goodKnown.length));
+    const seedUris=new Set(seedKnown.map(x=>x.spotify.uri));
+
+    let unknown=[];
+    if(unknownTarget>0){
+      progressEl.textContent="未知曲を音響類似で探索中…";
+      unknown=await discoverUnknown(seedKnown,unknownTarget,seedUris);
+      await enrichFreqBlog(unknown.filter(x=>!x.mix),"未知候補");
+      await enrichEmbeddings(unknown);
     }
 
-    let all=[...known,...unknown];
-    await enrichFreqBlog(all.filter(x=>!x.mix),"最終候補");
-    progressEl.textContent="音色embeddingを取得中…";
-    await enrichEmbeddings(all);
+    // Recompute Sonic stats with discovery tracks too.
+    prepareEmbeddingStats([...goodKnown,...unknown]);
+
+    // If discovery is short (e.g. Spotify quota), top up with known tracks instead of returning 24/30.
+    const finalKnownCount=total-unknown.length;
+    let finalKnown=chooseKnownSubset(goodKnown,finalKnownCount,unknown);
+
+    if(finalKnown.length<finalKnownCount){
+      const extras=allCached.filter(x=>!finalKnown.some(y=>y.spotify.uri===x.spotify.uri));
+      for(const x of extras){
+        if(finalKnown.length>=finalKnownCount)break;
+        finalKnown.push(x);
+      }
+    }
+
+    let all=[...finalKnown,...unknown].slice(0,total);
     prepareEmbeddingStats(all);
-    log(`Texture比較用descriptor: ${EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0}次元`);
 
-    progressEl.textContent="音色・BPM・Key・Energyで曲順を最適化中…";
+    progressEl.textContent="Sonic・BPM・Key・Energyで曲順を最適化中…";
     let seq=improve2Opt(greedySequence(all));
+
     log(`曲順最適化完了: severe transitions ${severeTransitionCount(seq)}/${Math.max(0,seq.length-1)}`);
     log("---- TRANSITIONS ----");
     for(let i=1;i<seq.length;i++)log(transitionLogLine(seq[i-1],seq[i],i));
     log("---------------------");
-    const name=$("#setName").value.trim()||"AI DJ NOW";
 
+    const name=$("#setName").value.trim()||"AI DJ NOW";
     let mixScores=[];
     tracksEl.innerHTML=seq.map((x,i)=>{
       let mixLine="";
       if(i>0){
         const m=pairMetrics(seq[i-1],x),score=m.score;
         mixScores.push(score);
-        mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
+        mixLine=` · Mix ${score}/100 · Sonic ${Math.round(clamp(m.sonic,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
       }
       const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
       const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -950,9 +1059,9 @@ async function generate(){
     }).join("");
 
     const avg=mixScores.length?Math.round(mixScores.reduce((a,b)=>a+b,0)/mixScores.length):0;
-    const summary=`${seq.length}曲 / 既知${known.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
+    const summary=`${seq.length}曲 / 既知${finalKnown.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
     savePendingSet(name,seq,summary);
-    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v20は大きなBPM差・遠いKey・Texture差を強く減点。各遷移の詳細はログに出ています。セットは端末内に保存済みです。</span>`;
+    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v21は候補を多めに解析し、繋ぎにくい曲を最終セットから外します。未知不足時は既知で補充します。</span>`;
     progressEl.textContent="ローカル生成完了";
     log(`ローカル生成完了: ${summary}`);
   }catch(e){
@@ -964,8 +1073,6 @@ async function generate(){
     applySpotifyBtn.disabled=!token()||!loadPendingSet();
   }
 }
-
-
 async function applyPendingToSpotify(){
   const p=loadPendingSet();if(!p)return alert("先にローカル生成してください");
   applySpotifyBtn.disabled=true;
