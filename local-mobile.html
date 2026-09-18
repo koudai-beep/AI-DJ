@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1020">
-<title>AI DJ Local Mobile v0.3 — Beatmix Engine</title>
+<title>AI DJ Local Mobile v0.4 — Phrase Flow</title>
 
 <!-- Professional beat/key analysis. Audio stays local; only these library files load from CDN. -->
 <script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.web.js"></script>
@@ -31,8 +31,8 @@ button.primary,.filebtn.primary{background:var(--accent);color:#08111d;border:0;
 </head>
 <body>
 <main>
-  <h1>AI DJ Local Mobile v0.3</h1>
-  <p class="sub">今回は「エフェクト付きぶつ切り」ではなく、<b>beat grid → downbeat → 8-bar phrase → pitchを保ったBPM同期 → 2デッキ重ね</b>でつなぎます。</p>
+  <h1>AI DJ Local Mobile v0.4</h1>
+  <p class="sub">曲の長さを固定せず、<b>8-bar phraseごとのEnergy/構造変化</b>を見て「ここで抜けると自然」という場所を選びます。最大時間だけ決めて、短く使う曲・長く使う曲を混在させます。</p>
 
   <section class="card">
     <h2>1. 音源を選ぶ</h2>
@@ -54,7 +54,7 @@ button.primary,.filebtn.primary{background:var(--accent);color:#08111d;border:0;
     <h2>3. DJセット</h2>
     <div class="row3">
       <div><div class="small">曲数</div><input id="count" type="number" min="2" max="20" value="6"></div>
-      <div><div class="small">1曲の目安</div><select id="playLen"><option value="90">1:30</option><option value="120" selected>2:00</option><option value="150">2:30</option></select></div>
+      <div><div class="small">1曲の最大再生時間</div><select id="playLen"><option value="90">最大1:30</option><option value="120">最大2:00</option><option value="150" selected>最大2:30</option><option value="180">最大3:00</option><option value="240">最大4:00</option></select></div>
       <div><div class="small">最大BPM補正</div><select id="tempoLimit"><option value=".04">±4%</option><option value=".06" selected>±6%</option><option value=".08">±8%</option></select></div>
     </div>
     <button id="planBtn" class="primary" disabled style="margin-top:9px">フレーズ単位でセットを作る</button>
@@ -68,7 +68,7 @@ button.primary,.filebtn.primary{background:var(--accent);color:#08111d;border:0;
       <button id="stopBtn" disabled>■ STOP</button>
     </div>
     <div id="now" class="now"><span class="status">停止中</span></div>
-    <p class="small">Beatmixでは次曲を1小節前から無音でプリロールし、拍位置を補正してからフェーダーを開きます。BPM変更時はAndroid Chromeのpitch-preserving再生を使います。</p>
+    <p class="small">再生時間は固定しません。各曲45秒以降〜設定した最大時間までの8小節境界を候補にして、構造変化・Energyの流れ・次曲との相性が最も自然な地点を選びます。</p>
   </section>
 
   <section class="card">
@@ -107,7 +107,7 @@ async function ensureEssentia(){
 }
 
 /* ---------- cache ---------- */
-const DB="ai_dj_local_mobile_v03",STORE="analysis";
+const DB="ai_dj_local_mobile_v04",STORE="analysis";
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbGet(k){try{const d=await openDB();return await new Promise((res,rej)=>{const r=d.transaction(STORE,"readonly").objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch{return null}}
 async function dbPut(k,v){try{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction(STORE,"readwrite");t.objectStore(STORE).put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch{}}
@@ -185,6 +185,48 @@ function energyNorm(y){
   const r=Math.sqrt(q/Math.max(1,n)),db=20*Math.log10(r+1e-9);
   return clamp((db+30)/24,0,1);
 }
+function rangeEnergy(y,sr,a,b){
+  const ia=clamp(Math.floor(a*sr),0,y.length),ib=clamp(Math.floor(b*sr),0,y.length);
+  if(ib<=ia+10)return 0;
+  let q=0,n=0;
+  for(let i=ia;i<ib;i+=8){q+=y[i]*y[i];n++}
+  return Math.sqrt(q/Math.max(1,n));
+}
+function phraseStatsFromAudio(y,sr,beats,phraseBeatIndices,duration){
+  const out=[];
+  for(let p=0;p<phraseBeatIndices.length;p++){
+    const bi=phraseBeatIndices[p];
+    const bj=(p+1<phraseBeatIndices.length)?phraseBeatIndices[p+1]:Math.min(beats.length-1,bi+32);
+    const start=beats[bi]??0;
+    let end=beats[bj]??Math.min(duration,start+16);
+    if(end<=start)end=Math.min(duration,start+16);
+    const e=rangeEnergy(y,sr,start,end);
+    const prevStart=Math.max(0,start-(end-start));
+    const ePrev=rangeEnergy(y,sr,prevStart,start);
+    const eNext=rangeEnergy(y,sr,end,Math.min(duration,end+(end-start)));
+    const jumpIn=Math.abs(Math.log((e+1e-7)/(ePrev+1e-7)));
+    const jumpOut=Math.abs(Math.log((eNext+1e-7)/(e+1e-7)));
+    out.push({beatIndex:bi,start,end,energy:e,jumpIn,jumpOut});
+  }
+  if(!out.length)return out;
+  const vals=out.map(x=>x.energy).sort((a,b)=>a-b);
+  const lo=vals[Math.floor((vals.length-1)*.10)]||0;
+  const hi=vals[Math.floor((vals.length-1)*.90)]||Math.max(...vals);
+  const den=Math.max(1e-9,hi-lo);
+  for(const x of out)x.energyNorm=clamp((x.energy-lo)/den,0,1);
+  for(let i=0;i<out.length;i++){
+    const prev=out[Math.max(0,i-1)].energyNorm;
+    const cur=out[i].energyNorm;
+    const next=out[Math.min(out.length-1,i+1)].energyNorm;
+    const x=out[i];
+    x.slopeOut=next-cur;
+    x.slopeIn=cur-prev;
+    x.localPeak=cur>=prev&&cur>=next;
+    x.localValley=cur<=prev&&cur<=next;
+  }
+  return out;
+}
+
 async function analyzeFile(f){
   const key=fileKey(f),cached=await dbGet(key);
   if(cached){log(`cache: ${f.name}`);return {...cached,file:f}}
@@ -199,9 +241,10 @@ async function analyzeFile(f){
     const ph=inferDownbeatAndPhrase(beats,mono,44100);
     const cue=pickCueIn(beats,ph.phraseBeatIndices,buf.duration);
     const phraseTimes=ph.phraseBeatIndices.map(i=>beats[i]).filter(Number.isFinite);
+    const phraseStats=phraseStatsFromAudio(mono,44100,beats,ph.phraseBeatIndices,buf.duration);
     const obj={
       id:key,title:f.name.replace(/\.[^.]+$/,""),duration:buf.duration,bpm,beatConfidence:confidence,
-      beats,phraseBeatIndices:ph.phraseBeatIndices,phraseTimes,cueIn:cue.time,cueBeatIndex:cue.beatIndex,
+      beats,phraseBeatIndices:ph.phraseBeatIndices,phraseTimes,phraseStats,cueIn:cue.time,cueBeatIndex:cue.beatIndex,
       key:`${kp} ${scale}`,camelot:camelot(kp,scale),keyConfidence:Number(kr.strength)||0,
       energy:energyNorm(mono)
     };
@@ -231,28 +274,88 @@ function chooseSeq(all,n){
   }
   return seq;
 }
-function nearestPhraseTrack(t,target,minT,maxT){
-  const cand=t.phraseBeatIndices.filter(i=>t.beats[i]>=minT&&t.beats[i]<=maxT);
-  if(cand.length)return cand.reduce((p,i)=>Math.abs(t.beats[i]-target)<Math.abs(t.beats[p]-target)?i:p,cand[0]);
-  const all=t.phraseBeatIndices.filter(i=>t.beats[i]>=minT);
-  return all.length?all[all.length-1]:Math.max(t.cueBeatIndex+32,Math.min(t.beats.length-1,t.cueBeatIndex+128));
+function incomingCueFor(t,preferDrop=false){
+  const stats=t.phraseStats||[];
+  const early=stats.filter(x=>x.start>=2 && x.start<=Math.min(42,t.duration*.30));
+  if(!early.length)return {time:t.cueIn,beatIndex:t.cueBeatIndex};
+  let best=null,bestScore=-1e9;
+  for(const x of early){
+    // Blend: prefer a quieter intro phrase. Drop: prefer a structural entry with higher energy.
+    let score;
+    if(preferDrop){
+      score=1.15*x.energyNorm + .55*x.jumpIn - .006*x.start;
+    }else{
+      score=1.10*(1-x.energyNorm) + .45*x.jumpIn - .004*x.start;
+    }
+    if(score>bestScore){bestScore=score;best=x}
+  }
+  return {time:best?.start??t.cueIn,beatIndex:best?.beatIndex??t.cueBeatIndex};
 }
-function buildPlan(seq,target,limit){
-  const items=seq.map((t,i)=>({track:t,start:i===0?Math.max(0,t.cueIn):t.cueIn,startBeat:i===0?t.cueBeatIndex:t.cueBeatIndex,rate:1,masterBpm:t.bpm}));
+function chooseExitPhrase(a,A,b,transitionType,maxPlayWall){
+  const stats=a.phraseStats||[];
+  const minPlayWall=45;
+  const minSource=A.start + minPlayWall*A.rate;
+  const maxSource=Math.min(a.duration-5, A.start + maxPlayWall*A.rate);
+  const candidates=[];
+
+  for(const x of stats){
+    const end=x.end;
+    if(end<minSource||end>maxSource)continue;
+
+    // "Natural exit" score:
+    // - Structural change at the end of a phrase
+    // - Falling energy / end of a local peak is good for blend
+    // - For drop transitions, a strong boundary after a high-energy phrase is good
+    // - Avoid making every track the same duration: no target-time term at all
+    let score=.85*x.jumpOut + .35*x.jumpIn;
+    if(transitionType==="Bass Swap"||transitionType==="Filter Blend"){
+      score += .65*Math.max(0,-x.slopeOut);
+      score += .35*(x.localPeak?1:0);
+      score += .20*(1-Math.abs(x.energyNorm-.65));
+    }else{
+      score += .65*x.energyNorm;
+      score += .45*(x.localPeak?1:0);
+      score += .25*x.jumpOut;
+    }
+
+    // Very early exits are allowed, but only if structure strongly supports them.
+    const played=(end-A.start)/Math.max(.001,A.rate);
+    if(played<60)score-=.18;
+    // Softly prefer not to sit exactly at the cap; cap is only a ceiling.
+    const capFrac=played/maxPlayWall;
+    score -= .10*Math.max(0,capFrac-.90);
+
+    candidates.push({x,score,played});
+  }
+
+  if(candidates.length){
+    candidates.sort((p,q)=>q.score-p.score);
+    return candidates[0];
+  }
+
+  // Fallback: latest phrase before the cap
+  const fallback=stats.filter(x=>x.end>=minSource&&x.end<=maxSource).at(-1);
+  if(fallback)return {x:fallback,score:0,played:(fallback.end-A.start)/A.rate};
+
+  const end=Math.min(maxSource,Math.max(minSource,a.duration-6));
+  const bi=a.beats.reduce((best,t,i)=>Math.abs(t-end)<Math.abs(a.beats[best]-end)?i:best,0);
+  return {x:{start:a.beats[Math.max(0,bi-32)]||Math.max(A.start,end-16),end,beatIndex:Math.max(0,bi-32)},score:0,played:(end-A.start)/A.rate};
+}
+function buildPlan(seq,maxPlay,limit){
+  const items=seq.map((t,i)=>({track:t,start:0,startBeat:0,rate:1,masterBpm:t.bpm}));
   const trans=[];
   let masterBpm=seq[0].bpm;
-  items[0].masterBpm=masterBpm;
+
+  // First track: choose a low-energy/clean phrase entry, not necessarily t=0.
+  const firstCue=incomingCueFor(seq[0],false);
+  items[0].start=firstCue.time;items[0].startBeat=firstCue.beatIndex;
 
   for(let i=0;i<seq.length-1;i++){
     const a=seq[i],b=seq[i+1],A=items[i],B=items[i+1];
-    const naturalTarget=A.start+target*A.rate;
-    const minT=A.start+Math.max(55,target-30)*A.rate;
-    const maxT=Math.min(a.duration-5,A.start+(target+30)*A.rate);
-    let endBeat=nearestPhraseTrack(a,naturalTarget,minT,maxT);
-
     const rawRatio=masterBpm/b.bpm;
     const canMix=Math.abs(rawRatio-1)<=limit && a.beatConfidence>0.25 && b.beatConfidence>0.25;
     let type,bars,rate;
+
     if(canMix){
       rate=rawRatio;
       const k=keyScore(a.camelot,b.camelot);
@@ -263,26 +366,43 @@ function buildPlan(seq,target,limit){
       bars=1;
     }
 
+    const exit=chooseExitPhrase(a,A,b,type,maxPlay);
+    const endTime=exit.x.end;
+    const endBeat=a.beats.reduce((best,t,idx)=>Math.abs(t-endTime)<Math.abs(a.beats[best]-endTime)?idx:best,0);
     const needBeats=bars*4;
-    let startBeat=endBeat-needBeats;
-    if(startBeat<=A.startBeat+16){
-      endBeat=Math.min(a.beats.length-1,A.startBeat+needBeats+32);
-      startBeat=Math.max(A.startBeat+16,endBeat-needBeats);
-    }
-    const tStart=a.beats[startBeat]??Math.max(A.start+40,a.duration-20);
-    const tEnd=a.beats[endBeat]??Math.min(a.duration-2,tStart+8);
+    let startBeat=Math.max(A.startBeat+8,endBeat-needBeats);
+    // Snap transition start to closest known phrase boundary if possible.
+    const priorPhrase=(a.phraseBeatIndices||[]).filter(x=>x>=A.startBeat+8&&x<=startBeat).at(-1);
+    if(priorPhrase!=null)startBeat=priorPhrase;
+    const tStart=a.beats[startBeat]??Math.max(A.start+35,endTime-12);
+    const tEnd=a.beats[endBeat]??endTime;
 
+    const preferDrop=type==="Echo Drop"||type==="Clean Drop";
+    const cue=incomingCueFor(b,preferDrop);
+    B.start=cue.time;B.startBeat=cue.beatIndex;
     B.rate=rate;
-    if(canMix){B.masterBpm=masterBpm}else{masterBpm=b.bpm;B.masterBpm=masterBpm}
+
+    if(canMix){B.masterBpm=masterBpm}
+    else{masterBpm=b.bpm;B.masterBpm=masterBpm}
 
     trans.push({
-      from:i,to:i+1,type,bars,start:tStart,end:tEnd,fromStartBeat:startBeat,fromEndBeat:endBeat,
-      incomingRate:rate,masterBpm:B.masterBpm,score:compat(a,b).score
+      from:i,to:i+1,type,bars,start:tStart,end:tEnd,
+      fromStartBeat:startBeat,fromEndBeat:endBeat,
+      incomingRate:rate,masterBpm:B.masterBpm,
+      score:compat(a,b).score,
+      playedSeconds:exit.played,
+      exitFlowScore:exit.score
     });
     A.end=tEnd;
   }
-  items.at(-1).end=Math.min(items.at(-1).track.duration,items.at(-1).start+target*items.at(-1).rate);
-  return {items,trans};
+
+  // Last track also ends on a natural phrase, not at a fixed duration.
+  const last=items.at(-1),lt=last.track;
+  const fakeNext=lt;
+  const ex=chooseExitPhrase(lt,last,fakeNext,"Clean Drop",maxPlay);
+  last.end=ex.x.end;
+
+  return {items,trans,maxPlay};
 }
 
 /* ---------- render UI ---------- */
@@ -294,7 +414,7 @@ function renderPlan(){
   $("#plan").innerHTML=plan.items.map((x,i)=>{
     const tr=plan.trans[i];
     return `<div class="planItem"><div><span class="num">${i+1}</span><b>${esc(x.track.title)}</b></div>
-      <div class="meta">${x.track.bpm.toFixed(1)} BPM → 再生 ${ (x.track.bpm*x.rate).toFixed(1)} BPM · ${esc(x.track.camelot)} · ${fmt(x.start)} → ${fmt(x.end)}</div>
+      <div class="meta">${x.track.bpm.toFixed(1)} BPM → 再生 ${(x.track.bpm*x.rate).toFixed(1)} BPM · ${esc(x.track.camelot)} · ${fmt(x.start)} → ${fmt(x.end)} · 使用 ${fmt((x.end-x.start)/Math.max(.001,x.rate))}</div>
       ${tr?`<span class="pill fx">${esc(tr.type)} ${tr.bars} bars</span><span class="pill">Mix ${Math.round(tr.score*100)}</span>${Math.abs(x.rate-1)>.002?`<span class="pill">Rate ${(x.rate*100).toFixed(1)}%</span>`:""}`:'<span class="pill">END</span>'}
     </div>`
   }).join("");
@@ -447,9 +567,9 @@ $("#analyzeBtn").addEventListener("click",async()=>{
   }finally{$("#analyzeBtn").disabled=!files.length}
 });
 $("#planBtn").addEventListener("click",()=>{
-  const n=clamp(+$("#count").value||6,2,Math.min(20,tracks.length)),target=+$("#playLen").value||120,limit=+$("#tempoLimit").value||.06;
-  const seq=chooseSeq(tracks,n);plan=buildPlan(seq,target,limit);renderPlan();$("#playBtn").disabled=false;
-  log(`plan ${seq.length} tracks / phrase-aware`);
+  const n=clamp(+$("#count").value||6,2,Math.min(20,tracks.length)),maxPlay=+$("#playLen").value||150,limit=+$("#tempoLimit").value||.06;
+  const seq=chooseSeq(tracks,n);plan=buildPlan(seq,maxPlay,limit);renderPlan();$("#playBtn").disabled=false;
+  log(`plan ${seq.length} tracks / flow-aware / max ${maxPlay}s`);
 });
 $("#playBtn").addEventListener("click",startMix);
 $("#stopBtn").addEventListener("click",stopAll);
