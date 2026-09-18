@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v19 Known-Only Ready</title>
+<title>AI DJ v20 Transition Guard</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v19 Known-Only Ready</h1>
-<p class="sub">Spotify QUOTA_EXCEEDED対策版。既知100%なら端末キャッシュだけでローカル生成できます。Spotify反映はquota回復後に別ボタンで実行します。</p>
+<h1>AI DJ v20 Transition Guard</h1>
+<p class="sub">繋ぎ品質強化版。大きすぎるBPM差・遠いCamelot Key・質感差を強く減点し、各トランジションの理由をログに表示します。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -450,7 +450,7 @@ function cachedUnknownCandidate(c){
   const hit=spotifyMapGet(c);
   return hit?{...c,spotify:hit,matchScore:1,fromSpotifyCache:true}:null;
 }
-const PENDING_SET_KEY="ai_dj_pending_set_v18";
+const PENDING_SET_KEY="ai_dj_pending_set_v20";
 function savePendingSet(name,seq,summary){
   const payload={
     ts:Date.now(),name,summary,
@@ -471,13 +471,14 @@ function loadPendingSet(){
 function renderPendingSet(p){
   if(!p)return;
   const seq=p.tracks;
+  prepareEmbeddingStats(seq);
   let mixScores=[];
   tracksEl.innerHTML=seq.map((x,i)=>{
     let mixLine="";
     if(i>0){
-      const m=pairMetrics(seq[i-1],x),score=Math.round((1-clamp(m.cost,0,1))*100);
+      const m=pairMetrics(seq[i-1],x),score=m.score;
       mixScores.push(score);
-      mixLine=` · Mix ${score}/100${m.timbre!==null?` · Timbre ${Math.round(clamp(m.timbre,0,1)*100)}%`:""}${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""}`;
+      mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
     }
     const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
     const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -605,49 +606,162 @@ function octaveBpmDelta(a,b){
   const A=a?.mix?.tempo,B=b?.mix?.tempo;if(!Number.isFinite(A)||!Number.isFinite(B))return null;
   return Math.min(...[B,B/2,B*2].map(v=>Math.abs(A-v)));
 }
-function bpmCost(a,b){const d=octaveBpmDelta(a,b);if(d===null)return .45;return clamp(d/14)}
-function parseCamelot(c){const m=String(c||"").toUpperCase().match(/^(\d{1,2})([AB])$/);return m?{n:Number(m[1]),side:m[2]}:null}
-function keyCost(a,b){
-  const A=parseCamelot(a?.mix?.camelot),B=parseCamelot(b?.mix?.camelot);if(!A||!B)return .38;
-  let dn=Math.abs(A.n-B.n);dn=Math.min(dn,12-dn);
-  if(A.n===B.n&&A.side===B.side)return 0;
-  if(A.n===B.n&&A.side!==B.side)return .08;
-  if(dn===1&&A.side===B.side)return .10;
-  if(dn===1&&A.side!==B.side)return .30;
-  if(dn===2&&A.side===B.side)return .48;
-  return .9;
+function bpmCost(a,b){
+  const d=octaveBpmDelta(a,b);
+  if(d===null)return .50;
+  if(d<=2)return 0;
+  if(d<=4)return .08;
+  if(d<=7)return .22;
+  if(d<=10)return .42;
+  if(d<=14)return .68;
+  if(d<=18)return .90;
+  return 1.0;
 }
-function scalarCost(a,b,k,scale=1){const A=a?.mix?.[k],B=b?.mix?.[k];if(!Number.isFinite(A)||!Number.isFinite(B))return .35;return clamp(Math.abs(A-B)*scale)}
+function parseCamelot(c){
+  const m=String(c||"").toUpperCase().match(/^(\d{1,2})([AB])$/);
+  return m?{n:Number(m[1]),side:m[2]}:null
+}
+function keyCost(a,b){
+  const A=parseCamelot(a?.mix?.camelot),B=parseCamelot(b?.mix?.camelot);
+  if(!A||!B)return .42;
+  let dn=Math.abs(A.n-B.n);dn=Math.min(dn,12-dn);
+  if(A.n===B.n&&A.side===B.side)return 0;       // same key
+  if(A.n===B.n&&A.side!==B.side)return .08;     // relative major/minor
+  if(dn===1&&A.side===B.side)return .10;         // adjacent wheel
+  if(dn===1&&A.side!==B.side)return .34;
+  if(dn===2&&A.side===B.side)return .58;
+  return 1.0;
+}
+function keyLabel(a,b){
+  const A=parseCamelot(a?.mix?.camelot),B=parseCamelot(b?.mix?.camelot);
+  if(!A||!B)return "Key?";
+  let dn=Math.abs(A.n-B.n);dn=Math.min(dn,12-dn);
+  if(A.n===B.n&&A.side===B.side)return "Key同一";
+  if(A.n===B.n&&A.side!==B.side)return "Key相対";
+  if(dn===1&&A.side===B.side)return "Key隣接";
+  if(dn<=1)return "Keyやや遠い";
+  return "Key遠い";
+}
+function scalarCost(a,b,k,scale=1){
+  const A=a?.mix?.[k],B=b?.mix?.[k];
+  if(!Number.isFinite(A)||!Number.isFinite(B))return .38;
+  return clamp(Math.abs(A-B)*scale)
+}
 function genreMoodCost(a,b){
   let c=0,n=0;
-  if(a?.mix?.genre&&b?.mix?.genre){n++;c+=alias(a.mix.genre)===alias(b.mix.genre)?0:.55}
-  if(a?.mix?.mood&&b?.mix?.mood){n++;c+=alias(a.mix.mood)===alias(b.mix.mood)?0:.35}
-  return n?c/n:.3;
+  if(a?.mix?.genre&&b?.mix?.genre){n++;c+=alias(a.mix.genre)===alias(b.mix.genre)?0:.60}
+  if(a?.mix?.mood&&b?.mix?.mood){n++;c+=alias(a.mix.mood)===alias(b.mix.mood)?0:.38}
+  return n?c/n:.32;
 }
-function embeddingCos(A,B,preferTimbre=true){
-  if(!A?.embedding||!B?.embedding)return null;
-  const av=A.embedding,bv=B.embedding,am=A.embedding_mask||av.map(()=>1),bm=B.embedding_mask||bv.map(()=>1);
-  const fields=A.fields||B.fields||[];
-  let idx=[];
-  for(let i=0;i<Math.min(av.length,bv.length);i++){
-    if(!am[i]||!bm[i]||!Number.isFinite(Number(av[i]))||!Number.isFinite(Number(bv[i])))continue;
-    const f=String(fields[i]||"").toLowerCase();
-    if(preferTimbre && /(bpm|tempo|key|mode|energy|loud|dance|valence)/.test(f))continue;
-    idx.push(i);
+
+/*
+FreqBlog's /similar endpoint z-score normalises each feature across its whole catalogue.
+Raw cosine on /embedding values is NOT used here because it produced misleading 99-100%
+similarities for very different tracks. Instead, v20 builds per-field statistics over the
+current DJ set and compares only descriptor-style fields after standardisation.
+*/
+let EMBED_STATS=null;
+const DIRECT_FEATURE_RE=/(bpm|tempo|key|mode|energy|loud|dance|valence|acoustic|instrument|speech|liveness)/i;
+
+function prepareEmbeddingStats(items){
+  const rows=items.filter(x=>x?.embedding?.embedding&&x.embedding?.fields);
+  if(!rows.length){EMBED_STATS=null;return}
+  const fields=rows[0].embedding.fields||[];
+  const stats={};
+  for(let i=0;i<fields.length;i++){
+    const name=String(fields[i]||`f${i}`);
+    if(DIRECT_FEATURE_RE.test(name))continue;
+    const vals=[];
+    for(const x of rows){
+      const e=x.embedding,mask=e.embedding_mask||e.embedding.map(()=>1),v=Number(e.embedding?.[i]);
+      if(mask[i]&&Number.isFinite(v))vals.push(v);
+    }
+    if(vals.length<Math.max(6,Math.ceil(rows.length*.35)))continue;
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length;
+    const sd=Math.sqrt(variance);
+    if(sd>1e-7)stats[i]={name,mean,sd};
   }
-  if(idx.length<3&&preferTimbre)return embeddingCos(A,B,false);
-  if(idx.length<3)return null;
-  let dot=0,aa=0,bb=0;for(const i of idx){const x=Number(av[i]),y=Number(bv[i]);dot+=x*y;aa+=x*x;bb+=y*y}
-  if(!aa||!bb)return null;return clamp(dot/Math.sqrt(aa*bb),-1,1);
+  EMBED_STATS={fields,stats};
+}
+function descriptorSimilarity(a,b){
+  const A=a?.embedding,B=b?.embedding;
+  if(!A?.embedding||!B?.embedding||!EMBED_STATS)return null;
+  const am=A.embedding_mask||A.embedding.map(()=>1),bm=B.embedding_mask||B.embedding.map(()=>1);
+  let sum=0,n=0;
+  for(const [idxS,st] of Object.entries(EMBED_STATS.stats)){
+    const i=Number(idxS),av=Number(A.embedding[i]),bv=Number(B.embedding[i]);
+    if(!am[i]||!bm[i]||!Number.isFinite(av)||!Number.isFinite(bv))continue;
+    const za=(av-st.mean)/st.sd,zb=(bv-st.mean)/st.sd;
+    const d=Math.min(4,Math.abs(za-zb));
+    sum+=d*d;n++;
+  }
+  if(n<2)return null;
+  const rms=Math.sqrt(sum/n);
+  // 0 distance -> 100%; ~1 standard deviation RMS -> ~45%; ~2 -> ~20%.
+  return Math.exp(-0.8*rms);
+}
+function fallbackTextureSimilarity(a,b){
+  const costs=[
+    scalarCost(a,b,"acousticness",1.6),
+    scalarCost(a,b,"instrumentalness",1.35),
+    scalarCost(a,b,"danceability",1.3),
+    scalarCost(a,b,"valence",1.0)
+  ];
+  return 1-clamp(costs.reduce((x,y)=>x+y,0)/costs.length);
+}
+function textureSimilarity(a,b){
+  const d=descriptorSimilarity(a,b);
+  return d===null?fallbackTextureSimilarity(a,b):d;
 }
 function pairMetrics(a,b){
-  const timbre=embeddingCos(a.embedding,b.embedding,true);
-  const tc=timbre===null?.42:1-clamp(timbre,0,1);
-  const texture=(scalarCost(a,b,"acousticness",1.5)+scalarCost(a,b,"instrumentalness",1.3))/2;
-  const cost=.35*tc+.20*bpmCost(a,b)+.15*keyCost(a,b)+.10*scalarCost(a,b,"energy",1.4)+
-             .05*scalarCost(a,b,"danceability",1.4)+.10*texture+.05*genreMoodCost(a,b);
-  const hardTimbre=timbre!==null&&timbre<.35?.20:0;
-  return {cost:clamp(cost+hardTimbre,0,1.4),timbre,bpmDelta:octaveBpmDelta(a,b)}
+  const texture=textureSimilarity(a,b);
+  const tc=1-clamp(texture,0,1);
+  const bd=octaveBpmDelta(a,b),bc=bpmCost(a,b),kc=keyCost(a,b);
+  const ec=scalarCost(a,b,"energy",1.55);
+  const dc=scalarCost(a,b,"danceability",1.35);
+  const spectral=(scalarCost(a,b,"acousticness",1.6)+scalarCost(a,b,"instrumentalness",1.35))/2;
+  const gm=genreMoodCost(a,b);
+
+  // Base weighting. BPM and harmonic compatibility are deliberately stronger than v19.
+  let cost=.24*tc+.27*bc+.19*kc+.11*ec+.05*dc+.09*spectral+.05*gm;
+
+  // Hard guards: these represent transitions a human DJ would usually avoid as a long blend.
+  let hardPenalty=0;
+  if(bd!==null){
+    if(bd>25)hardPenalty+=.42;
+    else if(bd>18)hardPenalty+=.27;
+    else if(bd>14)hardPenalty+=.12;
+  }
+  if(kc>=1.0)hardPenalty+=.16;
+  else if(kc>=.58)hardPenalty+=.07;
+  if(texture<.22)hardPenalty+=.16;
+  else if(texture<.35)hardPenalty+=.07;
+
+  cost=clamp(cost+hardPenalty,0,1.35);
+
+  // Human-readable score. A giant BPM jump can never masquerade as a high score.
+  let score=Math.round((1-clamp(cost,0,1))*100);
+  if(bd!==null&&bd>25)score=Math.min(score,35);
+  else if(bd!==null&&bd>18)score=Math.min(score,52);
+  else if(bd!==null&&bd>14)score=Math.min(score,68);
+  if(kc>=1.0)score=Math.min(score,62);
+
+  return {
+    cost,score,texture,
+    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,
+    keyLabel:keyLabel(a,b),hardPenalty
+  };
+}
+function transitionLogLine(a,b,index){
+  const m=pairMetrics(a,b);
+  const bpm=m.bpmDelta===null?"?":m.bpmDelta.toFixed(1);
+  const tex=Math.round(clamp(m.texture,0,1)*100);
+  const ea=Number.isFinite(a?.mix?.energy)?a.mix.energy:null;
+  const eb=Number.isFinite(b?.mix?.energy)?b.mix.energy:null;
+  const ed=(ea!==null&&eb!==null)?Math.abs(ea-eb).toFixed(2):"?";
+  const guard=m.hardPenalty>0?` · penalty +${m.hardPenalty.toFixed(2)}`:"";
+  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Texture ${tex}% | ΔEnergy ${ed}${guard}`;
 }
 function routeCost(seq){let c=0;for(let i=1;i<seq.length;i++)c+=pairMetrics(seq[i-1],seq[i]).cost;return c}
 function chooseStart(pool){
@@ -663,31 +777,61 @@ function greedySequence(items){
   if(!items.length)return [];
   const out=[],remaining=[...items];let cur=chooseStart(remaining);
   out.push(cur);remaining.splice(remaining.indexOf(cur),1);
+
   while(remaining.length){
-    let allowed=remaining.filter(x=>!wouldMakeFour(out,x));if(!allowed.length)allowed=remaining;
+    let allowed=remaining.filter(x=>!wouldMakeFour(out,x));
+    if(!allowed.length)allowed=remaining;
+
+    // If at least one genuinely safe transition exists, don't consider severe ones.
+    const evaluated=allowed.map(x=>({x,m:pairMetrics(cur,x)}));
+    const safe=evaluated.filter(z=>
+      (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
+      z.m.keyCost<1.0 &&
+      z.m.texture>=.22
+    );
+    const pool=safe.length?safe:evaluated;
+
     let best=null,bestScore=Infinity;
-    for(const x of allowed){
-      const m=pairMetrics(cur,x);
-      // Keep discoveries reasonably distributed, but never override a much better sonic transition.
+    for(const z of pool){
+      const x=z.x,m=z.m;
       let spacing=0;
-      if(x.type==="discovery"&&out.at(-1)?.type==="discovery")spacing=.08;
-      if(x.type==="known"&&out.slice(-5).every(y=>y.type==="known")&&remaining.some(y=>y.type==="discovery"))spacing=.05;
-      const future=remaining.length>1?Math.min(...remaining.filter(y=>y!==x&&!wouldMakeFour([...out,x],y)).map(y=>pairMetrics(x,y).cost).concat([.5])):.0;
-      const s=.82*m.cost+.18*future+spacing;
-      if(s<bestScore){bestScore=s;best=x}
+      if(x.type==="discovery"&&out.at(-1)?.type==="discovery")spacing=.07;
+      if(x.type==="known"&&out.slice(-5).every(y=>y.type==="known")&&remaining.some(y=>y.type==="discovery"))spacing=.04;
+
+      const nextPool=remaining.filter(y=>y!==x&&!wouldMakeFour([...out,x],y));
+      const future=nextPool.length
+        ?Math.min(...nextPool.map(y=>pairMetrics(x,y).cost))
+        :.0;
+
+      const score=.86*m.cost+.14*future+spacing;
+      if(score<bestScore){bestScore=score;best=x}
     }
-    if(!best)best=allowed[0];out.push(best);remaining.splice(remaining.indexOf(best),1);cur=best;
+    if(!best)best=pool[0]?.x||allowed[0];
+    out.push(best);remaining.splice(remaining.indexOf(best),1);cur=best;
   }
   return out;
 }
+function severeTransitionCount(seq){
+  let n=0;
+  for(let i=1;i<seq.length;i++){
+    const m=pairMetrics(seq[i-1],seq[i]);
+    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.texture<.22)n++;
+  }
+  return n;
+}
 function improve2Opt(seq){
-  let best=[...seq],bestCost=routeCost(best),changed=true,passes=0;
-  while(changed&&passes<4){
+  let best=[...seq],bestCost=routeCost(best),bestSevere=severeTransitionCount(best),changed=true,passes=0;
+  while(changed&&passes<5){
     changed=false;passes++;
     for(let i=1;i<best.length-2;i++)for(let j=i+1;j<best.length-1;j++){
       const cand=[...best.slice(0,i),...best.slice(i,j+1).reverse(),...best.slice(j+1)];
       if(violatesThree(cand))continue;
-      const c=routeCost(cand);if(c+0.015<bestCost){best=cand;bestCost=c;changed=true}
+      const severe=severeTransitionCount(cand);
+      if(severe>bestSevere)continue;
+      const c=routeCost(cand);
+      if(severe<bestSevere || c+0.01<bestCost){
+        best=cand;bestCost=c;bestSevere=severe;changed=true
+      }
     }
   }
   return best;
@@ -778,18 +922,24 @@ async function generate(){
     await enrichFreqBlog(all.filter(x=>!x.mix),"最終候補");
     progressEl.textContent="音色embeddingを取得中…";
     await enrichEmbeddings(all);
+    prepareEmbeddingStats(all);
+    log(`Texture比較用descriptor: ${EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0}次元`);
 
     progressEl.textContent="音色・BPM・Key・Energyで曲順を最適化中…";
     let seq=improve2Opt(greedySequence(all));
+    log(`曲順最適化完了: severe transitions ${severeTransitionCount(seq)}/${Math.max(0,seq.length-1)}`);
+    log("---- TRANSITIONS ----");
+    for(let i=1;i<seq.length;i++)log(transitionLogLine(seq[i-1],seq[i],i));
+    log("---------------------");
     const name=$("#setName").value.trim()||"AI DJ NOW";
 
     let mixScores=[];
     tracksEl.innerHTML=seq.map((x,i)=>{
       let mixLine="";
       if(i>0){
-        const m=pairMetrics(seq[i-1],x),score=Math.round((1-clamp(m.cost,0,1))*100);
+        const m=pairMetrics(seq[i-1],x),score=m.score;
         mixScores.push(score);
-        mixLine=` · Mix ${score}/100${m.timbre!==null?` · Timbre ${Math.round(clamp(m.timbre,0,1)*100)}%`:""}${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""}`;
+        mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
       }
       const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
       const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -802,7 +952,7 @@ async function generate(){
     const avg=mixScores.length?Math.round(mixScores.reduce((a,b)=>a+b,0)/mixScores.length):0;
     const summary=`${seq.length}曲 / 既知${known.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
     savePendingSet(name,seq,summary);
-    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">セットは端末内に保存済み。Spotifyにはまだ書き込んでいません。</span>`;
+    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v20は大きなBPM差・遠いKey・Texture差を強く減点。各遷移の詳細はログに出ています。セットは端末内に保存済みです。</span>`;
     progressEl.textContent="ローカル生成完了";
     log(`ローカル生成完了: ${summary}`);
   }catch(e){
