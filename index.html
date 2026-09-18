@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v4</title>
+<title>AI DJ v5</title>
 <style>
 :root{color-scheme:dark;--card:#141821;--line:#2a3140;--muted:#98a2b3;--green:#1ed760;--blue:#66b3ff;--red:#ff8d8d}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080a0f,#0e1219);color:#f8fafc;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
@@ -21,8 +21,8 @@ button,a.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px 1
 </head>
 <body>
 <main>
-<h1>AI DJ v4</h1>
-<p class="sub">未知曲をちゃんと混ぜる・Spotify誤マッチを厳しく防ぐ版。</p>
+<h1>AI DJ v5</h1>
+<p class="sub">好みで選び、BPM・キー・Energyで「繋ぎやすい順」に並べる版。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -54,7 +54,7 @@ button,a.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px 1
 <label class="chip"><input type="checkbox" class="lane" value="Game / Electronic">Game / Electronic</label>
 <label class="chip"><input type="checkbox" class="lane" value="Chill / Night">Chill / Night</label>
 </div>
-<p class="small">v4では未知曲が不足すると、類似曲だけでなく「類似アーティスト → その人気曲」まで探索します。目標未知曲数を満たすまで複数段階で探します。</p>
+<p class="small">未知曲探索後、ReccoBeatsの音響特徴（BPM・キー・Energy）を使ってDJ向けに曲順を最適化します。データが無い曲はフォールバックで並べます。</p>
 <button id="generateBtn" class="primary" disabled>AIで自動選曲 → Spotifyプレイリスト作成</button>
 </section>
 
@@ -211,14 +211,115 @@ async function resolveMany(candidates,count,label,globalUris=new Set()){
     await sleep(120)
   }return out
 }
-function sequence(known,unknown,total){
-  const out=[],K=[...known],U=[...unknown];let uTarget=U.length,totalTarget=total,uPlaced=0,last="";
-  for(let i=0;i<totalTarget;i++){
-    const expected=Math.round((i+1)*uTarget/Math.max(totalTarget,1));
-    let src=(uPlaced<expected&&U.length)?U:K;if(src===U)uPlaced++;if(!src.length)src=K.length?K:U;
-    let idx=src.findIndex(x=>alias((x.spotify.artists||[])[0]?.name||x.artist)!==last);if(idx<0)idx=0;
-    const x=src.splice(idx,1)[0];if(!x)break;out.push(x);last=alias((x.spotify.artists||[])[0]?.name||x.artist)
-  }return out
+async function mixFeaturesFor(x){
+  try{
+    const id=x?.spotify?.id;if(!id)return x;
+    const r=await fetch(`https://api.reccobeats.com/v1/track/${encodeURIComponent(id)}/audio-features`);
+    if(!r.ok)return x;
+    const b=await r.json();
+    const f=b?.audioFeatures||b?.audio_features||b?.features||b||{};
+    const tempo=Number(f.tempo), key=Number(f.key), mode=Number(f.mode), energy=Number(f.energy), danceability=Number(f.danceability);
+    if(Number.isFinite(tempo)) x.mix={tempo,key:Number.isFinite(key)?key:null,mode:Number.isFinite(mode)?mode:null,energy:Number.isFinite(energy)?energy:null,danceability:Number.isFinite(danceability)?danceability:null};
+  }catch{}
+  return x
+}
+async function enrichMixFeatures(items){
+  let ok=0;
+  for(let i=0;i<items.length;i++){
+    await mixFeaturesFor(items[i]);
+    if(items[i].mix?.tempo)ok++;
+    if((i+1)%5===0||i===items.length-1)log(`音響特徴取得 ${i+1}/${items.length}（取得${ok}曲）`);
+    await sleep(90);
+  }
+  return items
+}
+const MAJOR_CAMELOT=[8,3,10,5,12,7,2,9,4,11,6,1];
+const MINOR_CAMELOT=[5,12,7,2,9,4,11,6,1,8,3,10];
+function camelot(x){
+  const k=x?.mix?.key,m=x?.mix?.mode;
+  if(!Number.isFinite(k)||!Number.isFinite(m)||k<0||k>11)return null;
+  return {n:(m===1?MAJOR_CAMELOT:MINOR_CAMELOT)[k],side:m===1?"B":"A"};
+}
+function bpmDelta(a,b){
+  const A=a?.mix?.tempo,B=b?.mix?.tempo;
+  if(!Number.isFinite(A)||!Number.isFinite(B))return null;
+  const vals=[B,B/2,B*2];
+  return Math.min(...vals.map(v=>Math.abs(A-v)));
+}
+function bpmCost(a,b){
+  const d=bpmDelta(a,b);if(d===null)return .48;
+  if(d<=2)return 0;
+  if(d<=4)return .10;
+  if(d<=7)return .28;
+  if(d<=10)return .52;
+  if(d<=14)return .78;
+  return 1.25;
+}
+function keyCost(a,b){
+  const A=camelot(a),B=camelot(b);if(!A||!B)return .42;
+  let dn=Math.abs(A.n-B.n);dn=Math.min(dn,12-dn);
+  if(A.n===B.n&&A.side===B.side)return 0;
+  if(A.n===B.n&&A.side!==B.side)return .08;
+  if(dn===1&&A.side===B.side)return .12;
+  if(dn===1&&A.side!==B.side)return .34;
+  if(dn===2&&A.side===B.side)return .45;
+  return .92;
+}
+function energyCost(a,b){
+  const A=a?.mix?.energy,B=b?.mix?.energy;
+  if(!Number.isFinite(A)||!Number.isFinite(B))return .35;
+  const d=Math.abs(A-B);
+  return Math.min(1,d*2.1);
+}
+function transitionCost(a,b){
+  const sameArtist=alias((a.spotify.artists||[])[0]?.name||a.artist)===alias((b.spotify.artists||[])[0]?.name||b.artist);
+  return .50*bpmCost(a,b)+.28*keyCost(a,b)+.17*energyCost(a,b)+(sameArtist?.35:0);
+}
+function mixLabel(x){
+  const bpm=x?.mix?.tempo?Math.round(x.mix.tempo):"?";
+  const c=camelot(x),key=c?`${c.n}${c.side}`:"?";
+  const en=Number.isFinite(x?.mix?.energy)?x.mix.energy.toFixed(2):"?";
+  return `${bpm} BPM / ${key} / E${en}`;
+}
+function chooseStart(pool){
+  const withMix=pool.filter(x=>x.mix?.tempo);
+  const src=withMix.length?withMix:pool;
+  if(!src.length)return null;
+  let best=src[0],bestScore=-Infinity;
+  for(const x of src){
+    const e=Number.isFinite(x.mix?.energy)?x.mix.energy:.55;
+    const w=x.weight||1;
+    const score=w*.18-Math.abs(e-.58);
+    if(score>bestScore){best=x;bestScore=score}
+  }
+  return best;
+}
+function sequenceMixAware(known,unknown,total){
+  let K=[...known],U=[...unknown],all=[...K,...U],out=[];
+  if(!all.length)return out;
+  let cur=chooseStart(K.length?K:all);
+  if(!cur)return out;
+  out.push(cur);K=K.filter(x=>x!==cur);U=U.filter(x=>x!==cur);
+  const uTarget=unknown.length,totalTarget=Math.min(total,known.length+unknown.length);
+  let uPlaced=cur.type==="discovery"?1:0;
+  while(out.length<totalTarget&&(K.length||U.length)){
+    const expected=Math.round((out.length+1)*uTarget/Math.max(totalTarget,1));
+    let preferred=(uPlaced<expected&&U.length)?U:K;
+    if(!preferred.length)preferred=K.length?K:U;
+    let ranked=preferred.map(x=>({x,c:transitionCost(cur,x)})).sort((a,b)=>a.c-b.c);
+    // If the requested known/discovery type has a terrible transition, allow the other pool.
+    if(ranked.length&&ranked[0].c>0.92){
+      const alt=(preferred===K?U:K).map(x=>({x,c:transitionCost(cur,x)})).sort((a,b)=>a.c-b.c);
+      if(alt.length&&alt[0].c+0.18<ranked[0].c)ranked=alt;
+    }
+    const next=ranked[0]?.x;if(!next)break;
+    if(next.type==="discovery")uPlaced++;
+    out.push(next);
+    const c=transitionCost(cur,next),d=bpmDelta(cur,next);
+    log(`曲順最適化: ${cur.spotify.name} → ${next.spotify.name} | ΔBPM ${d===null?"?":d.toFixed(1)} | ${mixLabel(next)} | cost ${c.toFixed(2)}`);
+    K=K.filter(x=>x!==next);U=U.filter(x=>x!==next);cur=next;
+  }
+  return out;
 }
 async function generate(){
   genBtn.disabled=true;playlistLink.style.display="none";tracksEl.innerHTML="";
@@ -250,12 +351,14 @@ async function generate(){
     if(resolvedUnknown.length<unknownN)log(`警告: 未知曲は目標${unknownN}曲中${resolvedUnknown.length}曲までしか確保できませんでした`);
 
     const finalTotal=resolvedKnown.length+resolvedUnknown.length;
-    const seq=sequence(resolvedKnown,resolvedUnknown,finalTotal);
+    log("BPM・キー・Energyを取得して曲順を最適化します...");
+    await enrichMixFeatures([...resolvedKnown,...resolvedUnknown]);
+    const seq=sequenceMixAware(resolvedKnown,resolvedUnknown,finalTotal);
     const name=$("#setName").value.trim()||"AI DJ NOW";
-    const pl=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:`AI DJ v4: known ${resolvedKnown.length}, discovery ${resolvedUnknown.length}`})});
+    const pl=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:`AI DJ v5 mix-aware: known ${resolvedKnown.length}, discovery ${resolvedUnknown.length}`})});
     await spotify(`/playlists/${encodeURIComponent(pl.id)}/items`,{method:"POST",body:JSON.stringify({uris:seq.map(x=>x.spotify.uri)})});
 
-    tracksEl.innerHTML=seq.map((x,i)=>`<div class="track"><b>${i+1}. ${esc(x.spotify.name)}</b> <span class="${x.type==="known"?"k":"u"}">${x.type==="known"?"KNOWN":"DISCOVERY"}</span><br><span class="small">${esc((x.spotify.artists||[]).map(a=>a.name).join(", "))}${x.seed?` · from ${esc(x.seed)}`:""}</span></div>`).join("");
+    tracksEl.innerHTML=seq.map((x,i)=>`<div class="track"><b>${i+1}. ${esc(x.spotify.name)}</b> <span class="${x.type==="known"?"k":"u"}">${x.type==="known"?"KNOWN":"DISCOVERY"}</span><br><span class="small">${esc((x.spotify.artists||[]).map(a=>a.name).join(", "))} · ${esc(mixLabel(x))}${x.seed?` · from ${esc(x.seed)}`:""}</span></div>`).join("");
     playlistLink.href=pl.external_urls?.spotify||`https://open.spotify.com/playlist/${pl.id}`;playlistLink.style.display="block";
     log(`完成: ${seq.length}曲 / 既知${resolvedKnown.length} / 未知${resolvedUnknown.length}`);
   }catch(e){log("生成失敗: "+e.message);alert("エラー: "+e.message)}
