@@ -3,688 +3,456 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#111827">
-<title>AI DJ Local Mobile v0.2</title>
+<meta name="theme-color" content="#0b1020">
+<title>AI DJ Local Mobile v0.3 — Beatmix Engine</title>
+
+<!-- Professional beat/key analysis. Audio stays local; only these library files load from CDN. -->
+<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.web.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.js"></script>
+
 <style>
-:root{--bg:#0b1020;--card:#141b2d;--muted:#91a0b8;--text:#f7f8fb;--line:#29344d;--accent:#7dd3fc;--good:#86efac;--warn:#fbbf24}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1020,#10172a 45%,#0b1020);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
-main{max-width:860px;margin:auto;padding:18px 14px 80px}.hero{padding:12px 2px 6px}h1{font-size:26px;margin:0 0 8px}.sub{color:var(--muted);line-height:1.6;margin:0}
-.card{background:rgba(20,27,45,.96);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:14px;box-shadow:0 12px 32px rgba(0,0,0,.18)}
-h2{font-size:17px;margin:0 0 12px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-button,.filebtn,select,input[type=number]{width:100%;min-height:48px;border-radius:13px;border:1px solid #33415e;background:#111827;color:var(--text);font-size:15px;padding:10px 12px}
-button.primary,.filebtn.primary{background:#e5f7ff;color:#07111f;border:0;font-weight:800}button.secondary{background:#1c2740}button.danger{background:#34181e;border-color:#63303c}
-button:disabled{opacity:.45}.filebtn{display:flex;align-items:center;justify-content:center;cursor:pointer}.filebtn input{display:none}
-label.small{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}.status{font-size:13px;color:var(--muted);line-height:1.6;margin-top:9px}
-.progress{height:7px;background:#0c1324;border-radius:99px;overflow:hidden;margin-top:9px}.progress>div{height:100%;width:0;background:#e5f7ff;transition:width .15s}
-.track{border-top:1px solid var(--line);padding:11px 0;display:grid;grid-template-columns:1fr auto;gap:10px}.track:first-child{border-top:0}.title{font-weight:750}.meta{font-size:12px;color:var(--muted);line-height:1.6}.pill{font-size:11px;border:1px solid #3b4a68;border-radius:999px;padding:3px 7px;display:inline-block;margin:3px 3px 0 0}
-.planItem{padding:12px 0;border-top:1px solid var(--line)}.planItem:first-child{border-top:0}.num{display:inline-flex;width:26px;height:26px;border-radius:50%;align-items:center;justify-content:center;background:#24304a;margin-right:7px}
-.log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;white-space:pre-wrap;background:#080d18;border-radius:12px;padding:10px;max-height:220px;overflow:auto;color:#bac6d9}
-.now{padding:12px;border-radius:14px;background:#0e1728;border:1px solid #2d3c59;margin-top:10px}.now b{font-size:18px}
-input[type=range]{width:100%}.tiny{font-size:11px;color:var(--muted)}
-@media(max-width:600px){.row,.row3{grid-template-columns:1fr}main{padding:12px 10px 70px}.card{padding:14px;border-radius:16px}}
+:root{--bg:#090e19;--card:#121a2b;--line:#2b3852;--text:#f4f7fb;--muted:#91a0b7;--accent:#d8f3ff;--good:#9ae6b4;--warn:#fbd38d}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080d17,#0e1627 42%,#080d17);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
+main{max-width:900px;margin:auto;padding:16px 12px 80px}h1{margin:0;font-size:25px}.sub{margin:8px 0 0;color:var(--muted);line-height:1.55}
+.card{background:rgba(18,26,43,.97);border:1px solid var(--line);border-radius:18px;padding:15px;margin-top:14px;box-shadow:0 14px 34px rgba(0,0,0,.18)}
+h2{font-size:17px;margin:0 0 11px}.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+button,.filebtn,select,input{min-height:48px;width:100%;border-radius:13px;border:1px solid #36445f;background:#101827;color:var(--text);padding:10px 12px;font-size:14px}
+button.primary,.filebtn.primary{background:var(--accent);color:#08111d;border:0;font-weight:800}.filebtn{display:flex;align-items:center;justify-content:center}.filebtn input{display:none}button:disabled{opacity:.45}
+.small{font-size:12px;color:var(--muted);line-height:1.5}.status{font-size:13px;color:var(--muted);line-height:1.6;margin-top:9px}
+.progress{height:7px;background:#070d18;border-radius:99px;overflow:hidden;margin-top:10px}.progress div{height:100%;width:0;background:var(--accent);transition:width .2s}
+.track,.planItem{padding:11px 0;border-top:1px solid var(--line)}.track:first-child,.planItem:first-child{border-top:0}.title{font-weight:760}.meta{font-size:12px;color:var(--muted);line-height:1.55}
+.pill{display:inline-block;font-size:11px;border:1px solid #40506d;border-radius:999px;padding:3px 7px;margin:4px 3px 0 0}
+.num{display:inline-flex;width:25px;height:25px;border-radius:50%;align-items:center;justify-content:center;background:#24304a;margin-right:7px}
+.now{margin-top:10px;padding:13px;border-radius:14px;background:#0b1322;border:1px solid #30405d}.now b{font-size:18px}.fx{color:var(--good);font-weight:700}
+.log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;white-space:pre-wrap;background:#070b13;border-radius:12px;padding:10px;max-height:230px;overflow:auto;color:#bbc7d8}
+.notice{border-left:3px solid var(--warn);padding-left:10px}
+@media(max-width:640px){.row,.row3{grid-template-columns:1fr}.card{padding:13px}}
 </style>
 </head>
 <body>
 <main>
-  <div class="hero">
-    <h1>AI DJ Local Mobile v0.2</h1>
-    <p class="sub">Androidブラウザだけで、手持ち音源を解析 → 曲順 → Cue → DJ風Transition → 自動ミックス再生。EQ交換・Filter Sweep・Echo Out・Brake Drop・Tempo Syncを追加。音源はサーバーへ送信しません。</p>
-  </div>
+  <h1>AI DJ Local Mobile v0.3</h1>
+  <p class="sub">今回は「エフェクト付きぶつ切り」ではなく、<b>beat grid → downbeat → 8-bar phrase → pitchを保ったBPM同期 → 2デッキ重ね</b>でつなぎます。</p>
 
   <section class="card">
-    <h2>1. 音源</h2>
-    <label class="filebtn primary">音源ファイルを選ぶ
+    <h2>1. 音源を選ぶ</h2>
+    <label class="filebtn primary">ローカル音源を選択
       <input id="files" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus" multiple>
     </label>
-    <div id="fileStatus" class="status">まず10〜20曲で試してください。MP3 / M4A / WAV / FLAC等。</div>
-    <div class="progress"><div id="analyzeBar"></div></div>
-    <div class="row" style="margin-top:10px">
-      <button id="analyzeBtn" class="secondary" disabled>選んだ曲を解析</button>
-      <button id="clearBtn" class="danger">曲をクリア</button>
-    </div>
+    <div id="fileStatus" class="status">まず6〜12曲でテスト推奨。</div>
+    <div class="progress"><div id="bar"></div></div>
+    <button id="analyzeBtn" disabled style="margin-top:9px">Essentiaで解析</button>
+    <p class="small notice">初回だけEssentia.jsをCDNから読み込みます。選んだ音源ファイルそのものを外部へアップロードする処理はありません。</p>
   </section>
 
   <section class="card">
-    <h2>2. 解析済みライブラリ</h2>
+    <h2>2. 解析結果</h2>
     <div id="library"><div class="status">まだありません。</div></div>
   </section>
 
   <section class="card">
-    <h2>3. セット作成</h2>
+    <h2>3. DJセット</h2>
     <div class="row3">
-      <div><label class="small">セット曲数</label><input id="setCount" type="number" value="8" min="2" max="30"></div>
-      <div><label class="small">1曲の目安</label><select id="playLen"><option value="90">1:30</option><option value="120" selected>2:00</option><option value="150">2:30</option></select></div>
-      <div><label class="small">変化量</label><select id="variety"><option value="3">安定</option><option value="5" selected>標準</option><option value="8">多め</option></select></div>
+      <div><div class="small">曲数</div><input id="count" type="number" min="2" max="20" value="6"></div>
+      <div><div class="small">1曲の目安</div><select id="playLen"><option value="90">1:30</option><option value="120" selected>2:00</option><option value="150">2:30</option></select></div>
+      <div><div class="small">最大BPM補正</div><select id="tempoLimit"><option value=".04">±4%</option><option value=".06" selected>±6%</option><option value=".08">±8%</option></select></div>
     </div>
-    <div class="row3" style="margin-top:10px">
-      <div>
-        <label class="small">Transition強度</label>
-        <select id="fxStrength">
-          <option value="0.75">控えめ</option>
-          <option value="1" selected>標準</option>
-          <option value="1.25">派手</option>
-        </select>
-      </div>
-      <div>
-        <label class="small">Tempo Sync上限</label>
-        <select id="tempoLimit">
-          <option value="0.03">±3%</option>
-          <option value="0.05" selected>±5%</option>
-          <option value="0.08">±8%</option>
-        </select>
-      </div>
-      <div>
-        <label class="small">大BPM差の処理</label>
-        <select id="bigTempoMode">
-          <option value="auto" selected>自動</option>
-          <option value="echo">Echo Out優先</option>
-          <option value="brake">Brake Drop優先</option>
-        </select>
-      </div>
-    </div>
-    <button id="planBtn" class="primary" disabled style="margin-top:10px">AI DJセットを作る</button>
-    <div id="plan" style="margin-top:8px"><div class="status">解析後に作成できます。</div></div>
+    <button id="planBtn" class="primary" disabled style="margin-top:9px">フレーズ単位でセットを作る</button>
+    <div id="plan"><div class="status">解析後に作成できます。</div></div>
   </section>
 
   <section class="card">
-    <h2>4. 自動ミックス</h2>
+    <h2>4. 2デッキ自動ミックス</h2>
     <div class="row">
-      <button id="playBtn" class="primary" disabled>▶ ミックス開始</button>
-      <button id="stopBtn" class="secondary" disabled>■ 停止</button>
+      <button id="playBtn" class="primary" disabled>▶ MIX START</button>
+      <button id="stopBtn" disabled>■ STOP</button>
     </div>
     <div id="now" class="now"><span class="status">停止中</span></div>
-    <div class="status">v0.2は、BPM/Key/Energy差から Bass Swap / Filter Mix / Echo Out / Brake Drop を自動選択します。近いBPMでは最大±5%までTempo Syncして小節単位で重ねます。</div>
+    <p class="small">Beatmixでは次曲を1小節前から無音でプリロールし、拍位置を補正してからフェーダーを開きます。BPM変更時はAndroid Chromeのpitch-preserving再生を使います。</p>
   </section>
 
   <section class="card">
     <h2>ログ</h2>
     <div id="log" class="log">Ready.</div>
-    <button id="exportBtn" class="secondary" disabled style="margin-top:10px">Mix Plan JSONを保存</button>
   </section>
 </main>
 
 <script>
 "use strict";
-
-const $ = s => document.querySelector(s);
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const $=q=>document.querySelector(q);
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const fmt=s=>{s=Math.max(0,Number(s)||0);const m=Math.floor(s/60);return `${m}:${String(Math.floor(s%60)).padStart(2,"0")}`};
-const log=(m)=>{const el=$("#log");el.textContent+=`\n[${new Date().toLocaleTimeString()}] ${m}`;el.scrollTop=el.scrollHeight};
+const fmt=x=>{x=Math.max(0,+x||0);return `${Math.floor(x/60)}:${String(Math.floor(x%60)).padStart(2,"0")}`};
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+function log(s){const e=$("#log");e.textContent+=`\n[${new Date().toLocaleTimeString()}] ${s}`;e.scrollTop=e.scrollHeight}
 
-let audioCtx=null;
-let selectedFiles=[];
-let tracks=[];
-let plan=null;
-let playToken=0;
-let activeNodes=[];
+let ctx=null, essentia=null, essentiaReady=null;
+let files=[], tracks=[], plan=null, token=0, activeDecks=[];
 
-function getCtx(){
-  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  return audioCtx;
+function audioCtx(){if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});return ctx}
+
+async function ensureEssentia(){
+  if(essentia)return essentia;
+  if(essentiaReady)return essentiaReady;
+  essentiaReady=(async()=>{
+    log("Essentia WASM loading...");
+    const wasm=await EssentiaWASM({
+      locateFile:f=>`https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/${f}`
+    });
+    essentia=new Essentia(wasm);
+    log(`Essentia ready: ${essentia.version||"ok"}`);
+    return essentia;
+  })();
+  return essentiaReady;
 }
 
-/* ---------- IndexedDB analysis cache ---------- */
-const DB_NAME="ai_dj_local_mobile_v01", STORE="analysis";
-function dbOpen(){
-  return new Promise((resolve,reject)=>{
-    const r=indexedDB.open(DB_NAME,1);
-    r.onupgradeneeded=()=>r.result.createObjectStore(STORE);
-    r.onsuccess=()=>resolve(r.result); r.onerror=()=>reject(r.error);
-  });
-}
-async function dbGet(k){
-  try{const db=await dbOpen();return await new Promise((res,rej)=>{const tx=db.transaction(STORE,"readonly");const r=tx.objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch{return null}
-}
-async function dbPut(k,v){
-  try{const db=await dbOpen();await new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).put(v,k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}catch{}
-}
-function fileKey(f){return `${f.name}|${f.size}|${f.lastModified}`}
+/* ---------- cache ---------- */
+const DB="ai_dj_local_mobile_v03",STORE="analysis";
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function dbGet(k){try{const d=await openDB();return await new Promise((res,rej)=>{const r=d.transaction(STORE,"readonly").objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}catch{return null}}
+async function dbPut(k,v){try{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction(STORE,"readwrite");t.objectStore(STORE).put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch{}}
+const fileKey=f=>`${f.name}|${f.size}|${f.lastModified}`;
 
-/* ---------- Audio decode / analysis ---------- */
-async function decodeFile(file){
-  const arr=await file.arrayBuffer();
-  return await getCtx().decodeAudioData(arr.slice(0));
-}
-function monoDownsample(buf,target=11025){
-  const stride=Math.max(1,Math.round(buf.sampleRate/target));
-  const sr=buf.sampleRate/stride;
-  const n=Math.floor(buf.length/stride);
-  const out=new Float32Array(n);
-  const chans=[];
-  for(let c=0;c<buf.numberOfChannels;c++) chans.push(buf.getChannelData(c));
-  for(let i=0,j=0;i<n;i++,j+=stride){
+/* ---------- analysis ---------- */
+async function decode(f){const ab=await f.arrayBuffer();return await audioCtx().decodeAudioData(ab.slice(0))}
+function mono44100(buf){
+  const srcRate=buf.sampleRate,target=44100,srcLen=buf.length,dstLen=Math.max(1,Math.round(srcLen*target/srcRate));
+  const channels=[];for(let c=0;c<buf.numberOfChannels;c++)channels.push(buf.getChannelData(c));
+  const out=new Float32Array(dstLen),ratio=srcRate/target;
+  for(let i=0;i<dstLen;i++){
+    const p=i*ratio,j=Math.floor(p),a=p-j,k=Math.min(srcLen-1,j+1);
     let v=0;
-    for(const ch of chans) v+=ch[j]||0;
-    out[i]=v/chans.length;
+    for(const ch of channels)v+=(ch[j]*(1-a)+ch[k]*a);
+    out[i]=v/channels.length;
   }
-  return {y:out,sr};
+  return out;
 }
-function rms(x,a=0,b=x.length){
-  let s=0,n=0;
-  for(let i=a;i<b;i++){const v=x[i];s+=v*v;n++}
-  return Math.sqrt(s/Math.max(1,n));
+function rmsAt(y,sr,t,win=.10){
+  const a=clamp(Math.floor((t-win)*sr),0,y.length),b=clamp(Math.floor((t+win)*sr),0,y.length);
+  let q=0,n=0;for(let i=a;i<b;i++){q+=y[i]*y[i];n++}return Math.sqrt(q/Math.max(1,n));
 }
-function hann(i,n){return .5-.5*Math.cos(2*Math.PI*i/(n-1))}
-function fft(re,im){
-  const n=re.length;
-  for(let i=1,j=0;i<n;i++){
-    let bit=n>>1;
-    for(;j&bit;bit>>=1)j^=bit;
-    j^=bit;
-    if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]]}
-  }
-  for(let len=2;len<=n;len<<=1){
-    const ang=-2*Math.PI/len, wlr=Math.cos(ang), wli=Math.sin(ang);
-    for(let i=0;i<n;i+=len){
-      let wr=1,wi=0;
-      for(let j=0;j<len/2;j++){
-        const uR=re[i+j],uI=im[i+j];
-        const vR=re[i+j+len/2]*wr-im[i+j+len/2]*wi;
-        const vI=re[i+j+len/2]*wi+im[i+j+len/2]*wr;
-        re[i+j]=uR+vR;im[i+j]=uI+vI;
-        re[i+j+len/2]=uR-vR;im[i+j+len/2]=uI-vI;
-        const nwr=wr*wlr-wi*wli;wi=wr*wli+wi*wlr;wr=nwr;
-      }
+function localEnergy(y,sr,t,span=.8){
+  const a=clamp(Math.floor((t-span)*sr),0,y.length),b=clamp(Math.floor((t+span)*sr),0,y.length);
+  let q=0,n=0;for(let i=a;i<b;i+=4){q+=y[i]*y[i];n++}return Math.sqrt(q/Math.max(1,n));
+}
+function inferDownbeatAndPhrase(beats,y,sr){
+  if(beats.length<40)return {downOffset:0,phraseOffset:0,phraseBeatIndices:[0]};
+  const accent=beats.map(t=>rmsAt(y,sr,t,.09));
+  let bestOff=0,best=-Infinity;
+  for(let off=0;off<4;off++){
+    let s=0,n=0;
+    for(let i=off;i<accent.length;i+=4){
+      const others=[1,2,3].map(k=>accent[i+k]||0);
+      s+=accent[i]-(others.reduce((a,b)=>a+b,0)/3);n++;
     }
+    s/=Math.max(1,n);
+    if(s>best){best=s;bestOff=off}
   }
-}
-function onsetEnvelope(y,sr){
-  const frame=1024,hop=256;
-  const n=Math.max(1,Math.floor((y.length-frame)/hop));
-  const e=new Float32Array(n);
-  for(let k=0;k<n;k++){
-    const a=k*hop,b=Math.min(y.length,a+frame);
-    e[k]=rms(y,a,b);
-  }
-  const o=new Float32Array(n);
-  let mean=0;
-  for(let i=1;i<n;i++){o[i]=Math.max(0,e[i]-e[i-1]);mean+=o[i]}
-  mean/=Math.max(1,n);
-  let sd=0;for(const v of o)sd+=(v-mean)*(v-mean);sd=Math.sqrt(sd/Math.max(1,n));
-  for(let i=0;i<n;i++)o[i]=Math.max(0,(o[i]-mean)/(sd+1e-9));
-  return {o,hop,fps:sr/hop};
-}
-function estimateTempo(o,fps){
-  let best={score:-1,bpm:128,lag:Math.round(fps*60/128)};
-  const minBpm=70,maxBpm=190;
-  const minLag=Math.floor(fps*60/maxBpm),maxLag=Math.ceil(fps*60/minBpm);
-  for(let lag=minLag;lag<=maxLag;lag++){
-    let s=0,n=0,aa=0,bb=0;
-    for(let i=lag;i<o.length;i+=1){
-      const a=o[i],b=o[i-lag];s+=a*b;aa+=a*a;bb+=b*b;n++;
+  const down=[];
+  for(let i=bestOff;i<beats.length;i+=4)down.push(i);
+
+  let bestPhrase=0,bp=-Infinity;
+  for(let po=0;po<8;po++){
+    let s=0,n=0;
+    for(let k=po;k<down.length;k+=8){
+      const bi=down[k],t=beats[bi];
+      const before=localEnergy(y,sr,Math.max(0,t-1.2),.6);
+      const after=localEnergy(y,sr,Math.min((y.length-1)/sr,t+1.2),.6);
+      s+=Math.abs(Math.log(after+1e-7)-Math.log(before+1e-7))+accent[bi]*.8;n++;
     }
-    s/=Math.sqrt(aa*bb)+1e-9;
-    let bpm=60*fps/lag;
-    // mild preference for common electronic metrical range; not a hard constraint
-    const pref=(bpm>=95&&bpm<=175)?1.04:1.0;
-    s*=pref;
-    if(s>best.score)best={score:s,bpm,lag};
+    s/=Math.max(1,n);
+    if(s>bp){bp=s;bestPhrase=po}
   }
-  return best;
+  const phraseBeatIndices=[];
+  for(let k=bestPhrase;k<down.length;k+=8)phraseBeatIndices.push(down[k]);
+  return {downOffset:bestOff,phraseOffset:bestPhrase,phraseBeatIndices};
 }
-function beatGrid(o,fps,lag,hop,sr,duration){
-  let bestP=0,bestS=-1;
-  for(let p=0;p<lag;p++){
-    let s=0;
-    for(let i=p;i<o.length;i+=lag)s+=o[i];
-    if(s>bestS){bestS=s;bestP=p}
-  }
-  const phase=bestP*hop/sr;
-  const period=lag/fps;
-  const beats=[];
-  for(let t=phase;t<duration;t+=period)beats.push(t);
-  return {phase,period,beats};
+const NOTE_PC={"C":0,"C#":1,"DB":1,"D":2,"D#":3,"EB":3,"E":4,"F":5,"F#":6,"GB":6,"G":7,"G#":8,"AB":8,"A":9,"A#":10,"BB":10,"B":11};
+const CMAJ=["8B","3B","10B","5B","12B","7B","2B","9B","4B","11B","6B","1B"];
+const CMIN=["5A","12A","7A","2A","9A","4A","11A","6A","1A","8A","3A","10A"];
+function camelot(key,scale){
+  const pc=NOTE_PC[String(key||"").toUpperCase().replace("♭","B").replace("♯","#")];
+  if(pc==null)return"";return String(scale).toLowerCase().startsWith("min")?CMIN[pc]:CMAJ[pc];
 }
-const MAJ=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
-const MIN=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
-const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-const CAM_MAJ=["8B","3B","10B","5B","12B","7B","2B","9B","4B","11B","6B","1B"];
-const CAM_MIN=["5A","12A","7A","2A","9A","4A","11A","6A","1A","8A","3A","10A"];
-function norm(v){let s=Math.sqrt(v.reduce((a,x)=>a+x*x,0))||1;return v.map(x=>x/s)}
-const NMAJ=norm(MAJ), NMIN=norm(MIN);
-function estimateKey(y,sr){
-  const N=4096, chroma=new Float64Array(12);
-  const windows=10;
-  if(y.length<N)return {key:"Unknown",camelot:"",confidence:0};
-  for(let w=0;w<windows;w++){
-    const center=Math.floor((.08+.84*(w/(windows-1)))*y.length);
-    let start=clamp(center-N/2,0,y.length-N)|0;
-    const re=new Float64Array(N),im=new Float64Array(N);
-    for(let i=0;i<N;i++)re[i]=y[start+i]*hann(i,N);
-    fft(re,im);
-    for(let k=1;k<N/2;k++){
-      const f=k*sr/N;if(f<55||f>2200)continue;
-      const mag=re[k]*re[k]+im[k]*im[k];
-      const midi=69+12*Math.log2(f/440);
-      const pc=((Math.round(midi)%12)+12)%12;
-      chroma[pc]+=Math.sqrt(mag)/(1+f/1800);
-    }
-  }
-  const cv=norm(Array.from(chroma));
-  const cands=[];
-  for(let tonic=0;tonic<12;tonic++){
-    let sm=0,sn=0;
-    for(let i=0;i<12;i++){
-      sm+=cv[i]*NMAJ[(i-tonic+12)%12];
-      sn+=cv[i]*NMIN[(i-tonic+12)%12];
-    }
-    cands.push({score:sm,tonic,mode:"major"},{score:sn,tonic,mode:"minor"});
-  }
-  cands.sort((a,b)=>b.score-a.score);
-  const a=cands[0],b=cands[1];
-  return {
-    key:`${NOTES[a.tonic]} ${a.mode}`,
-    camelot:a.mode==="major"?CAM_MAJ[a.tonic]:CAM_MIN[a.tonic],
-    confidence:clamp(.45+(a.score-b.score)*3,0,.98)
-  };
+function pickCueIn(beats,phraseIdx,duration){
+  let c=phraseIdx.filter(i=>beats[i]>=4&&beats[i]<=Math.min(28,duration*.22));
+  if(!c.length)c=phraseIdx.filter(i=>beats[i]>=2&&beats[i]<duration*.3);
+  const i=c.length?c[0]:(phraseIdx[0]||0);
+  return {time:beats[i]||0,beatIndex:i};
 }
-function alignBar(t,phase,period,duration){
-  const bar=period*4;
-  if(!isFinite(bar)||bar<=0)return clamp(t,0,duration);
-  const k=Math.round((t-phase)/bar);
-  return clamp(phase+k*bar,0,duration);
+function energyNorm(y){
+  let q=0,n=0;for(let i=0;i<y.length;i+=16){q+=y[i]*y[i];n++}
+  const r=Math.sqrt(q/Math.max(1,n)),db=20*Math.log10(r+1e-9);
+  return clamp((db+30)/24,0,1);
 }
-function sectionsAndCues(y,sr,duration,grid){
-  const win=Math.max(1,Math.floor(sr*4));
-  const vals=[];
-  for(let a=0;a<y.length;a+=win)vals.push(rms(y,a,Math.min(y.length,a+win)));
-  const changes=[];
-  for(let i=1;i<vals.length;i++){
-    const a=Math.log(vals[i-1]+1e-6),b=Math.log(vals[i]+1e-6);
-    changes.push({t:i*4,score:Math.abs(b-a)});
-  }
-  changes.sort((a,b)=>b.score-a.score);
-  const chosen=[0,duration];
-  for(const c of changes){
-    const t=alignBar(c.t,grid.phase,grid.period,duration);
-    if(t<6||t>duration-6)continue;
-    if(chosen.every(x=>Math.abs(x-t)>=12)){chosen.push(t);if(chosen.length>=9)break}
-  }
-  chosen.sort((a,b)=>a-b);
-  const early=chosen.filter(t=>t>=0&&t<=Math.min(32,duration*.25));
-  const cueIn=early.length?early.reduce((p,x)=>Math.abs(x-12)<Math.abs(p-12)?x:p,early[0]):0;
-  let outs=chosen.filter(t=>t>=duration*.45&&t<=duration-6);
-  if(!outs.length)outs=[alignBar(Math.max(cueIn+45,duration-30),grid.phase,grid.period,duration)];
-  return {sections:chosen,cueIn,cueOuts:outs};
-}
-async function analyzeOne(file){
-  const cached=await dbGet(fileKey(file));
-  if(cached){log(`cache: ${file.name}`);return {...cached,file}}
-  const buf=await decodeFile(file);
-  const {y,sr}=monoDownsample(buf,11025);
-  const duration=buf.duration;
-  const {o,hop,fps}=onsetEnvelope(y,sr);
-  const temp=estimateTempo(o,fps);
-  const grid=beatGrid(o,fps,temp.lag,hop,sr,duration);
-  const key=estimateKey(y,sr);
-  const rr=rms(y);
-  const db=20*Math.log10(rr+1e-9);
-  const energy=clamp((db+30)/24,0,1);
-  const sc=sectionsAndCues(y,sr,duration,grid);
-  const title=file.name.replace(/\.[^.]+$/,"");
-  const obj={
-    id:fileKey(file),title,artist:"",duration,bpm:temp.bpm,key:key.key,camelot:key.camelot,
-    keyConfidence:key.confidence,energy,phase:grid.phase,beatPeriod:grid.period,
-    sections:sc.sections,cueIn:sc.cueIn,cueOuts:sc.cueOuts
-  };
-  await dbPut(fileKey(file),obj);
-  return {...obj,file};
+async function analyzeFile(f){
+  const key=fileKey(f),cached=await dbGet(key);
+  if(cached){log(`cache: ${f.name}`);return {...cached,file:f}}
+  const es=await ensureEssentia(),buf=await decode(f),mono=mono44100(buf);
+  const vec=es.arrayToVector(mono);
+  try{
+    const rr=es.RhythmExtractor2013(vec,208,"multifeature",55);
+    const beats=Array.from(es.vectorToArray(rr.ticks));
+    let bpm=Number(rr.bpm)||0,confidence=Number(rr.confidence)||0;
+    const kr=es.KeyExtractor(vec);
+    const kp=String(kr.key||""),scale=String(kr.scale||"");
+    const ph=inferDownbeatAndPhrase(beats,mono,44100);
+    const cue=pickCueIn(beats,ph.phraseBeatIndices,buf.duration);
+    const phraseTimes=ph.phraseBeatIndices.map(i=>beats[i]).filter(Number.isFinite);
+    const obj={
+      id:key,title:f.name.replace(/\.[^.]+$/,""),duration:buf.duration,bpm,beatConfidence:confidence,
+      beats,phraseBeatIndices:ph.phraseBeatIndices,phraseTimes,cueIn:cue.time,cueBeatIndex:cue.beatIndex,
+      key:`${kp} ${scale}`,camelot:camelot(kp,scale),keyConfidence:Number(kr.strength)||0,
+      energy:energyNorm(mono)
+    };
+    await dbPut(key,obj);
+    try{rr.ticks.delete();rr.estimates.delete();rr.bpmIntervals.delete()}catch{}
+    return {...obj,file:f};
+  }finally{try{vec.delete()}catch{}}
 }
 
-/* ---------- sequencing ---------- */
-function camelotParts(c){const m=String(c||"").match(/^(\d{1,2})([AB])$/);return m?[Number(m[1]),m[2]]:null}
-function keyScore(a,b){
-  const A=camelotParts(a),B=camelotParts(b);if(!A||!B)return .55;
-  const [na,la]=A,[nb,lb]=B;
-  if(na===nb&&la===lb)return 1;
-  if(na===nb&&la!==lb)return .94;
-  const d=Math.min((na-nb+12)%12,(nb-na+12)%12);
-  if(la===lb&&d===1)return .92;
-  if(la!==lb&&d===1)return .70;
-  return Math.max(.15,.72-.10*d);
+/* ---------- compatibility / planning ---------- */
+function cp(c){const m=String(c||"").match(/^(\d{1,2})([AB])$/);return m?[+m[1],m[2]]:null}
+function keyScore(a,b){const A=cp(a),B=cp(b);if(!A||!B)return.55;const[na,la]=A,[nb,lb]=B;if(na===nb&&la===lb)return 1;if(na===nb&&la!==lb)return.94;const d=Math.min((na-nb+12)%12,(nb-na+12)%12);if(la===lb&&d===1)return.92;if(la!==lb&&d===1)return.72;return Math.max(.12,.70-.10*d)}
+function tempoVariant(b,ref){const a=[b*.5,b,b*2];return a.reduce((p,x)=>Math.abs(Math.log(x/ref))<Math.abs(Math.log(p/ref))?x:p,a[0])}
+function compat(a,b){
+  const bb=tempoVariant(b.bpm,a.bpm),td=Math.abs(bb-a.bpm)/a.bpm;
+  const ts=Math.exp(-Math.pow(td/.05,2)),ks=keyScore(a.camelot,b.camelot),es=Math.exp(-Math.pow(Math.abs(a.energy-b.energy)/.30,2));
+  return {score:.52*ts+.30*ks+.18*es,td,ks,es,bb};
 }
-function tempoVariant(bpm,ref){
-  const opts=[bpm*.5,bpm,bpm*2];return opts.reduce((p,x)=>Math.abs(Math.log(x/ref))<Math.abs(Math.log(p/ref))?x:p,opts[0]);
-}
-function pairScore(a,b){
-  const bb=tempoVariant(b.bpm,a.bpm);
-  const td=Math.abs(bb-a.bpm)/a.bpm;
-  const tempo=Math.exp(-Math.pow(td/.055,2));
-  const key=keyScore(a.camelot,b.camelot);
-  const energy=Math.exp(-Math.pow(Math.abs(a.energy-b.energy)/.30,2));
-  return {score:.50*tempo+.30*key+.20*energy,tempo,key,energy,td,bb};
-}
-function weightedPick(arr){
-  let sum=arr.reduce((s,x)=>s+Math.max(.001,Math.pow(x.score,3)),0);
-  let r=Math.random()*sum;
-  for(const x of arr){r-=Math.max(.001,Math.pow(x.score,3));if(r<=0)return x}
-  return arr[0];
-}
-function buildSequence(all,n,topK){
-  if(!all.length)return[];
-  const bpms=all.map(x=>x.bpm).filter(x=>x>0).sort((a,b)=>a-b);
-  const med=bpms[Math.floor(bpms.length/2)]||128;
-  const starts=[...all].sort((a,b)=>(Math.abs(tempoVariant(a.bpm,med)-med)+20*Math.abs(a.energy-.55))-(Math.abs(tempoVariant(b.bpm,med)-med)+20*Math.abs(b.energy-.55)));
-  let cur=starts[Math.floor(Math.random()*Math.min(4,starts.length))];
-  const seq=[cur];let rem=all.filter(x=>x.id!==cur.id);
+function chooseSeq(all,n){
+  const med=[...all].sort((a,b)=>a.bpm-b.bpm)[Math.floor(all.length/2)]?.bpm||128;
+  let cur=[...all].sort((a,b)=>Math.abs(a.bpm-med)-Math.abs(b.bpm-med))[0],seq=[cur],rem=all.filter(x=>x.id!==cur.id);
   while(rem.length&&seq.length<n){
-    let cand=rem.map(t=>({t,...pairScore(seq[seq.length-1],t)})).sort((a,b)=>b.score-a.score).slice(0,Math.min(topK,rem.length));
-    const pick=weightedPick(cand).t;seq.push(pick);rem=rem.filter(x=>x.id!==pick.id);
+    const top=rem.map(t=>({t,...compat(seq.at(-1),t)})).sort((a,b)=>b.score-a.score).slice(0,Math.min(5,rem.length));
+    const weights=top.map(x=>Math.pow(Math.max(.05,x.score),4)),sum=weights.reduce((a,b)=>a+b,0);let r=Math.random()*sum,pick=top[0];
+    for(let i=0;i<top.length;i++){r-=weights[i];if(r<=0){pick=top[i];break}}
+    seq.push(pick.t);rem=rem.filter(x=>x.id!==pick.t.id);
   }
   return seq;
 }
-function nearestCueOut(t,start,target,minP,maxP){
-  const lo=Math.min(t.duration-5,start+minP),hi=Math.min(t.duration-4,start+maxP);
-  let c=t.cueOuts.filter(x=>x>=lo&&x<=hi);
-  if(!c.length)c=t.sections.filter(x=>x>=lo&&x<=hi);
-  if(c.length)return c.reduce((p,x)=>Math.abs(x-(start+target))<Math.abs(p-(start+target))?x:p,c[0]);
-  return clamp(start+target,lo,hi);
+function nearestPhraseTrack(t,target,minT,maxT){
+  const cand=t.phraseBeatIndices.filter(i=>t.beats[i]>=minT&&t.beats[i]<=maxT);
+  if(cand.length)return cand.reduce((p,i)=>Math.abs(t.beats[i]-target)<Math.abs(t.beats[p]-target)?i:p,cand[0]);
+  const all=t.phraseBeatIndices.filter(i=>t.beats[i]>=minT);
+  return all.length?all[all.length-1]:Math.max(t.cueBeatIndex+32,Math.min(t.beats.length-1,t.cueBeatIndex+128));
 }
-function makePlan(seq,target){
-  const fxStrength=Number($("#fxStrength").value)||1;
-  const tempoLimit=Number($("#tempoLimit").value)||.05;
-  const bigTempoMode=$("#bigTempoMode").value||"auto";
+function buildPlan(seq,target,limit){
+  const items=seq.map((t,i)=>({track:t,start:i===0?Math.max(0,t.cueIn):t.cueIn,startBeat:i===0?t.cueBeatIndex:t.cueBeatIndex,rate:1,masterBpm:t.bpm}));
+  const trans=[];
+  let masterBpm=seq[0].bpm;
+  items[0].masterBpm=masterBpm;
 
-  const items=seq.map((t,i)=>{
-    const start=i===0?0:t.cueIn;
-    const end=nearestCueOut(t,start,target,Math.max(50,target-30),target+30);
-    return {track:t,start,end};
-  });
+  for(let i=0;i<seq.length-1;i++){
+    const a=seq[i],b=seq[i+1],A=items[i],B=items[i+1];
+    const naturalTarget=A.start+target*A.rate;
+    const minT=A.start+Math.max(55,target-30)*A.rate;
+    const maxT=Math.min(a.duration-5,A.start+(target+30)*A.rate);
+    let endBeat=nearestPhraseTrack(a,naturalTarget,minT,maxT);
 
-  const transitions=[];
-  for(let i=0;i<items.length-1;i++){
-    const a=items[i].track,b=items[i+1].track,d=pairScore(a,b);
-    const ratio=a.bpm/b.bpm;
-    const syncable=Math.abs(ratio-1)<=tempoLimit;
-
-    let type,bars,cross;
-    if(syncable && d.key>=.82 && d.td<=.025){
-      type="Bass Swap 16";
-      bars=16;
-    }else if(syncable && d.td<=tempoLimit){
-      type="Filter Mix 8";
-      bars=8;
+    const rawRatio=masterBpm/b.bpm;
+    const canMix=Math.abs(rawRatio-1)<=limit && a.beatConfidence>0.25 && b.beatConfidence>0.25;
+    let type,bars,rate;
+    if(canMix){
+      rate=rawRatio;
+      const k=keyScore(a.camelot,b.camelot);
+      if(k>=.82){type="Bass Swap";bars=16}else{type="Filter Blend";bars=8}
     }else{
-      bars=0;
-      const prefer=bigTempoMode==="auto" ? (a.energy>=.62 ? "echo":"brake") : bigTempoMode;
-      type=prefer==="brake" ? "Brake Drop" : "Echo Out";
+      rate=1;
+      type=(a.energy>.58)?"Echo Drop":"Clean Drop";
+      bars=1;
     }
 
-    const avg=Math.max(60,(a.bpm+d.bb)/2);
-    if(bars){
-      cross=clamp(bars*4*60/avg,4,28);
-    }else{
-      cross=type==="Brake Drop" ? 1.6*fxStrength : 2.4*fxStrength;
+    const needBeats=bars*4;
+    let startBeat=endBeat-needBeats;
+    if(startBeat<=A.startBeat+16){
+      endBeat=Math.min(a.beats.length-1,A.startBeat+needBeats+32);
+      startBeat=Math.max(A.startBeat+16,endBeat-needBeats);
     }
+    const tStart=a.beats[startBeat]??Math.max(A.start+40,a.duration-20);
+    const tEnd=a.beats[endBeat]??Math.min(a.duration-2,tStart+8);
 
-    transitions.push({
-      from:i,to:i+1,type,bars,cross,score:d.score,detail:d,
-      syncRatio:syncable?clamp(ratio,1-tempoLimit,1+tempoLimit):1,
-      fxStrength
+    B.rate=rate;
+    if(canMix){B.masterBpm=masterBpm}else{masterBpm=b.bpm;B.masterBpm=masterBpm}
+
+    trans.push({
+      from:i,to:i+1,type,bars,start:tStart,end:tEnd,fromStartBeat:startBeat,fromEndBeat:endBeat,
+      incomingRate:rate,masterBpm:B.masterBpm,score:compat(a,b).score
     });
+    A.end=tEnd;
   }
-  return {items,transitions,createdAt:new Date().toISOString()};
+  items.at(-1).end=Math.min(items.at(-1).track.duration,items.at(-1).start+target*items.at(-1).rate);
+  return {items,trans};
 }
 
-/* ---------- UI ---------- */
+/* ---------- render UI ---------- */
 function renderLibrary(){
-  const el=$("#library");
-  if(!tracks.length){el.innerHTML='<div class="status">まだありません。</div>';return}
-  el.innerHTML=tracks.map(t=>`<div class="track"><div><div class="title">${esc(t.title)}</div><div class="meta">${t.bpm.toFixed(1)} BPM · ${esc(t.key)} · ${esc(t.camelot)} · Energy ${t.energy.toFixed(2)} · ${fmt(t.duration)}</div><div><span class="pill">IN ${fmt(t.cueIn)}</span><span class="pill">${t.sections.length} sections</span></div></div></div>`).join("");
+  $("#library").innerHTML=tracks.length?tracks.map(t=>`<div class="track"><div class="title">${esc(t.title)}</div><div class="meta">${t.bpm.toFixed(2)} BPM · ${esc(t.camelot)} · ${esc(t.key)} · Beat conf ${t.beatConfidence.toFixed(2)} · Energy ${t.energy.toFixed(2)}</div><span class="pill">Cue ${fmt(t.cueIn)}</span><span class="pill">${t.phraseTimes.length} phrase marks</span></div>`).join(""):'<div class="status">まだありません。</div>'
 }
-function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
 function renderPlan(){
-  const el=$("#plan");
-  if(!plan){el.innerHTML='<div class="status">まだありません。</div>';return}
-  el.innerHTML=plan.items.map((it,i)=>{
-    const tr=plan.transitions[i];
-    return `<div class="planItem"><div><span class="num">${i+1}</span><b>${esc(it.track.title)}</b></div>
-      <div class="meta">${it.track.bpm.toFixed(1)} BPM · ${esc(it.track.camelot)} · ${fmt(it.start)} → ${fmt(it.end)}</div>
-      ${tr?`<div><span class="pill">${esc(tr.type)}</span><span class="pill">Mix ${Math.round(tr.score*100)}</span><span class="pill">${tr.cross.toFixed(1)}s</span>${Math.abs((tr.syncRatio||1)-1)>.002?`<span class="pill">Tempo ${(100*(tr.syncRatio-1)).toFixed(1)}%</span>`:""}</div>`:"<div><span class='pill'>END</span></div>"}
-    </div>`;
+  if(!plan){$("#plan").innerHTML='<div class="status">まだありません。</div>';return}
+  $("#plan").innerHTML=plan.items.map((x,i)=>{
+    const tr=plan.trans[i];
+    return `<div class="planItem"><div><span class="num">${i+1}</span><b>${esc(x.track.title)}</b></div>
+      <div class="meta">${x.track.bpm.toFixed(1)} BPM → 再生 ${ (x.track.bpm*x.rate).toFixed(1)} BPM · ${esc(x.track.camelot)} · ${fmt(x.start)} → ${fmt(x.end)}</div>
+      ${tr?`<span class="pill fx">${esc(tr.type)} ${tr.bars} bars</span><span class="pill">Mix ${Math.round(tr.score*100)}</span>${Math.abs(x.rate-1)>.002?`<span class="pill">Rate ${(x.rate*100).toFixed(1)}%</span>`:""}`:'<span class="pill">END</span>'}
+    </div>`
   }).join("");
 }
-$("#files").addEventListener("change",e=>{
-  selectedFiles=[...e.target.files];
-  $("#fileStatus").textContent=`${selectedFiles.length}曲を選択`;
-  $("#analyzeBtn").disabled=!selectedFiles.length;
-  log(`${selectedFiles.length} files selected`);
-});
-$("#clearBtn").addEventListener("click",()=>{
-  stopMix(); selectedFiles=[];tracks=[];plan=null;$("#files").value="";
-  $("#fileStatus").textContent="クリアしました。";$("#analyzeBtn").disabled=true;$("#planBtn").disabled=true;$("#playBtn").disabled=true;$("#exportBtn").disabled=true;
-  renderLibrary();renderPlan();$("#analyzeBar").style.width="0%";
-});
+
+/* ---------- real 2-deck player ---------- */
+function readyMedia(a){
+  if(a.readyState>=2)return Promise.resolve();
+  return new Promise((res,rej)=>{const ok=()=>{cleanup();res()},bad=()=>{cleanup();rej(new Error("media load failed"))},cleanup=()=>{a.removeEventListener("canplay",ok);a.removeEventListener("error",bad)};a.addEventListener("canplay",ok,{once:true});a.addEventListener("error",bad,{once:true})})
+}
+function makeDeck(item){
+  const c=audioCtx(),a=document.createElement("audio"),url=URL.createObjectURL(item.track.file);
+  a.src=url;a.preload="auto";a.preservesPitch=true;a.playbackRate=item.rate||1;a.volume=1;a.load();
+  const src=c.createMediaElementSource(a),low=c.createBiquadFilter(),hp=c.createBiquadFilter(),lp=c.createBiquadFilter(),g=c.createGain(),master=c.createGain();
+  low.type="lowshelf";low.frequency.value=170;low.gain.value=0;
+  hp.type="highpass";hp.frequency.value=28;hp.Q.value=.65;
+  lp.type="lowpass";lp.frequency.value=20000;lp.Q.value=.65;
+  g.gain.value=0;master.gain.value=.90;
+  src.connect(low).connect(hp).connect(lp).connect(g).connect(master).connect(c.destination);
+  const d={audio:a,url,src,low,hp,lp,g,master,item,wallZero:null,startSource:item.start};
+  activeDecks.push(d);return d;
+}
+function cleanupDeck(d){try{d.audio.pause()}catch{};try{URL.revokeObjectURL(d.url)}catch{};for(const n of [d.src,d.low,d.hp,d.lp,d.g,d.master])try{n.disconnect()}catch{}}
+function stopAll(){
+  token++;
+  for(const d of activeDecks)cleanupDeck(d);activeDecks=[];
+  $("#playBtn").disabled=!plan;$("#stopBtn").disabled=true;$("#now").innerHTML='<span class="status">停止中</span>';
+}
+function eqPow(x){return Math.sin(clamp(x,0,1)*Math.PI/2)}
+function automateBassSwap(outD,inD,t0,t1){
+  const d=t1-t0,mid=t0+d*.5;
+  inD.g.gain.setValueAtTime(.08,t0);inD.g.gain.linearRampToValueAtTime(.72,mid);inD.g.gain.linearRampToValueAtTime(1,t1);
+  inD.low.gain.setValueAtTime(-24,t0);inD.low.gain.setValueAtTime(-24,mid-d*.08);inD.low.gain.linearRampToValueAtTime(0,mid+d*.08);
+  outD.low.gain.setValueAtTime(0,t0);outD.low.gain.setValueAtTime(0,mid-d*.08);outD.low.gain.linearRampToValueAtTime(-24,mid+d*.08);
+  outD.hp.frequency.setValueAtTime(28,t0);outD.hp.frequency.setValueAtTime(28,mid);outD.hp.frequency.exponentialRampToValueAtTime(650,t1);
+  outD.g.gain.setValueAtTime(1,t0);outD.g.gain.setValueAtTime(1,mid);outD.g.gain.linearRampToValueAtTime(.001,t1);
+}
+function automateFilter(outD,inD,t0,t1){
+  const d=t1-t0;
+  inD.g.gain.setValueAtTime(.06,t0);inD.g.gain.linearRampToValueAtTime(1,t1);
+  inD.lp.frequency.setValueAtTime(1800,t0);inD.lp.frequency.exponentialRampToValueAtTime(20000,t0+d*.68);
+  inD.low.gain.setValueAtTime(-18,t0);inD.low.gain.linearRampToValueAtTime(0,t0+d*.58);
+  outD.hp.frequency.setValueAtTime(28,t0);outD.hp.frequency.exponentialRampToValueAtTime(900,t1);
+  outD.low.gain.setValueAtTime(0,t0);outD.low.gain.linearRampToValueAtTime(-18,t0+d*.58);
+  outD.g.gain.setValueAtTime(1,t0);outD.g.gain.linearRampToValueAtTime(.001,t1);
+}
+function addEcho(deck){
+  const c=audioCtx(),send=c.createGain(),delay=c.createDelay(1.5),fb=c.createGain(),wet=c.createGain();
+  send.gain.value=0;delay.delayTime.value=.24;fb.gain.value=.38;wet.gain.value=.65;
+  deck.lp.connect(send).connect(delay).connect(wet).connect(deck.master);delay.connect(fb).connect(delay);
+  return {send,delay,fb,wet};
+}
+function automateDrop(outD,inD,t0,t1,type){
+  const d=t1-t0;
+  inD.g.gain.setValueAtTime(.001,t0);inD.g.gain.setValueAtTime(.001,t1-.08);inD.g.gain.linearRampToValueAtTime(1,t1+.05);
+  if(type==="Echo Drop"){
+    const e=addEcho(outD);outD.echo=e;
+    e.send.gain.setValueAtTime(.03,t0);e.send.gain.linearRampToValueAtTime(.55,t0+d*.55);
+    outD.hp.frequency.setValueAtTime(28,t0);outD.hp.frequency.exponentialRampToValueAtTime(1100,t1);
+  }else{
+    outD.lp.frequency.setValueAtTime(20000,t0);outD.lp.frequency.exponentialRampToValueAtTime(2300,t1);
+  }
+  outD.g.gain.setValueAtTime(1,t0);outD.g.gain.setValueAtTime(1,t1-.12);outD.g.gain.exponentialRampToValueAtTime(.001,t1);
+}
+async function startMutedPreroll(deck,cueTime,rate,revealWall,beatSec,myToken){
+  const a=deck.audio;
+  await readyMedia(a);
+  if(myToken!==token)return;
+  const preWall=Math.max(.7,beatSec*4);
+  const sourcePre=preWall*rate;
+  const sourceStart=Math.max(0,cueTime-sourcePre);
+  const actualPre=(cueTime-sourceStart)/rate;
+  const playWall=revealWall-actualPre;
+  const wait=Math.max(0,(playWall-audioCtx().currentTime)*1000);
+  await sleep(wait);
+  if(myToken!==token)return;
+  a.playbackRate=rate;a.preservesPitch=true;a.currentTime=sourceStart;deck.g.gain.value=0;
+  await a.play();
+  // Hidden pre-roll drift correction; this is why incoming beat entry is much tighter than v0.2.
+  const wall0=audioCtx().currentTime,src0=sourceStart;
+  while(audioCtx().currentTime<revealWall-.06 && myToken===token){
+    const expected=src0+(audioCtx().currentTime-wall0)*rate;
+    const err=a.currentTime-expected;
+    if(Math.abs(err)>.025)a.currentTime=expected;
+    await sleep(90);
+  }
+  deck.wallZero=revealWall;deck.startSource=cueTime;
+}
+async function runTrack(i,deck,myToken){
+  if(myToken!==token||!plan)return;
+  const item=plan.items[i],tr=plan.trans[i];
+  $("#now").innerHTML=`<div class="small">DECK ${i%2?"B":"A"} · ${i+1}/${plan.items.length}</div><b>${esc(item.track.title)}</b><div class="meta">${(item.track.bpm*item.rate).toFixed(1)} BPM · ${esc(item.track.camelot)}${tr?` · NEXT <span class="fx">${esc(tr.type)}</span>`:""}</div>`;
+
+  if(!tr){
+    const endWall=deck.wallZero+(item.end-item.start)/item.rate;
+    await sleep(Math.max(0,(endWall-audioCtx().currentTime)*1000));
+    if(myToken===token)stopAll();return;
+  }
+
+  const transStartWall=deck.wallZero+(tr.start-item.start)/item.rate;
+  const transEndWall=deck.wallZero+(tr.end-item.start)/item.rate;
+  const nextItem=plan.items[i+1],next=makeDeck(nextItem);
+  const beatSec=60/Math.max(1,tr.masterBpm);
+
+  await startMutedPreroll(next,nextItem.start,nextItem.rate,transStartWall,beatSec,myToken);
+  if(myToken!==token)return;
+
+  // The media element is already running muted; WebAudio automation opens it exactly on the phrase boundary.
+  const c=audioCtx();
+  const t0=Math.max(c.currentTime+.03,transStartWall),shift=t0-transStartWall,t1=transEndWall+shift;
+  if(tr.type==="Bass Swap")automateBassSwap(deck,next,t0,t1);
+  else if(tr.type==="Filter Blend")automateFilter(deck,next,t0,t1);
+  else automateDrop(deck,next,t0,t1,tr.type);
+
+  next.wallZero=t0; // cueIn corresponds to actual reveal boundary
+  next.startSource=nextItem.start;
+  log(`${item.track.title} → ${nextItem.track.title} | ${tr.type} ${tr.bars} bars | ${tr.masterBpm.toFixed(1)} BPM | rate ${nextItem.rate.toFixed(4)}`);
+
+  await sleep(Math.max(0,(t1-c.currentTime)*1000+120));
+  if(myToken!==token)return;
+  try{deck.audio.pause()}catch{}
+  runTrack(i+1,next,myToken);
+}
+async function startMix(){
+  if(!plan)return;
+  stopAll();const myToken=++token,c=audioCtx();await c.resume();
+  $("#playBtn").disabled=true;$("#stopBtn").disabled=false;
+  const first=makeDeck(plan.items[0]);await readyMedia(first.audio);
+  if(myToken!==token)return;
+  first.audio.currentTime=first.item.start;first.audio.playbackRate=first.item.rate;first.audio.preservesPitch=true;first.g.gain.value=1;
+  await first.audio.play();
+  first.wallZero=c.currentTime;first.startSource=first.item.start;
+  log(`START: ${first.item.track.title} @ ${(first.item.track.bpm*first.item.rate).toFixed(1)} BPM`);
+  runTrack(0,first,myToken);
+}
+
+/* ---------- events ---------- */
+$("#files").addEventListener("change",e=>{files=[...e.target.files];$("#fileStatus").textContent=`${files.length}曲を選択`;$("#analyzeBtn").disabled=!files.length;log(`${files.length} files selected`)});
 $("#analyzeBtn").addEventListener("click",async()=>{
   $("#analyzeBtn").disabled=true;tracks=[];plan=null;renderPlan();
   try{
-    for(let i=0;i<selectedFiles.length;i++){
-      $("#fileStatus").textContent=`解析中 ${i+1}/${selectedFiles.length}: ${selectedFiles[i].name}`;
-      $("#analyzeBar").style.width=`${100*i/selectedFiles.length}%`;
-      try{
-        const t=await analyzeOne(selectedFiles[i]);tracks.push(t);renderLibrary();
-        log(`analyzed: ${t.title} / ${t.bpm.toFixed(1)} BPM / ${t.camelot}`);
-      }catch(err){log(`skip ${selectedFiles[i].name}: ${err.message}`)}
-      await sleep(20);
+    await ensureEssentia();
+    for(let i=0;i<files.length;i++){
+      $("#fileStatus").textContent=`解析 ${i+1}/${files.length}: ${files[i].name}`;$("#bar").style.width=`${100*i/files.length}%`;
+      try{const t=await analyzeFile(files[i]);tracks.push(t);renderLibrary();log(`${t.title}: ${t.bpm.toFixed(2)} BPM / ${t.camelot} / beats ${t.beats.length}`)}
+      catch(e){log(`ERROR ${files[i].name}: ${e.message}`)}
+      await sleep(25);
     }
-    $("#analyzeBar").style.width="100%";
-    $("#fileStatus").textContent=`解析完了: ${tracks.length}曲`;
-    $("#planBtn").disabled=tracks.length<2;
-  }finally{$("#analyzeBtn").disabled=!selectedFiles.length}
+    $("#bar").style.width="100%";$("#fileStatus").textContent=`解析完了 ${tracks.length}曲`;$("#planBtn").disabled=tracks.length<2;
+  }finally{$("#analyzeBtn").disabled=!files.length}
 });
 $("#planBtn").addEventListener("click",()=>{
-  const n=clamp(Number($("#setCount").value)||8,2,Math.min(30,tracks.length));
-  const target=Number($("#playLen").value)||120;
-  const topK=Number($("#variety").value)||5;
-  const seq=buildSequence(tracks,n,topK);
-  plan=makePlan(seq,target);
-  renderPlan();$("#playBtn").disabled=false;$("#exportBtn").disabled=false;
-  log(`plan: ${seq.length} tracks`);
+  const n=clamp(+$("#count").value||6,2,Math.min(20,tracks.length)),target=+$("#playLen").value||120,limit=+$("#tempoLimit").value||.06;
+  const seq=chooseSeq(tracks,n);plan=buildPlan(seq,target,limit);renderPlan();$("#playBtn").disabled=false;
+  log(`plan ${seq.length} tracks / phrase-aware`);
 });
-$("#exportBtn").addEventListener("click",()=>{
-  if(!plan)return;
-  const out={version:"mobile-v0.2",items:plan.items.map((it,i)=>({index:i+1,title:it.track.title,bpm:it.track.bpm,key:it.track.key,camelot:it.track.camelot,start:it.start,end:it.end})),transitions:plan.transitions.map(t=>({from:t.from+1,to:t.to+1,type:t.type,crossfade_seconds:t.cross,score:t.score}))};
-  const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="ai-dj-mobile-mix-plan.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-});
-
-/* ---------- live mixer ---------- */
-function stopMix(){
-  playToken++;
-  for(const n of activeNodes){try{n.stop&&n.stop()}catch{}try{n.disconnect&&n.disconnect()}catch{}}
-  activeNodes=[];
-  $("#stopBtn").disabled=true;$("#playBtn").disabled=!plan;
-  $("#now").innerHTML='<span class="status">停止中</span>';
-}
-$("#stopBtn").addEventListener("click",stopMix);
-
-function gainCurve(from,to,n=128){
-  const a=new Float32Array(n);
-  for(let i=0;i<n;i++){
-    const x=i/(n-1);
-    const eq=Math.sin(x*Math.PI/2);
-    a[i]=from+(to-from)*eq;
-  }
-  return a;
-}
-function makeEchoSend(ctx,input,master,amount=.32,delayTime=.24){
-  const send=ctx.createGain(),delay=ctx.createDelay(2.0),fb=ctx.createGain(),wet=ctx.createGain();
-  send.gain.value=amount;
-  delay.delayTime.value=delayTime;
-  fb.gain.value=.34;
-  wet.gain.value=.55;
-  input.connect(send).connect(delay).connect(wet).connect(master);
-  delay.connect(fb).connect(delay);
-  return {send,delay,fb,wet};
-}
-function createRuntime(buf,item,when,rate,incomingCross=0){
-  const ctx=getCtx();
-  const src=ctx.createBufferSource();src.buffer=buf;src.playbackRate.value=rate;
-
-  const low=ctx.createBiquadFilter();low.type="lowshelf";low.frequency.value=180;low.gain.value=incomingCross>0?-18:0;
-  const hp=ctx.createBiquadFilter();hp.type="highpass";hp.frequency.value=24;hp.Q.value=.7;
-  const lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=20000;lp.Q.value=.7;
-  const g=ctx.createGain();g.gain.value=incomingCross>0?0:1;
-  const master=ctx.createGain();master.gain.value=.92;
-
-  src.connect(low).connect(hp).connect(lp).connect(g).connect(master).connect(ctx.destination);
-
-  const dur=(item.end-item.start)/rate;
-  src.start(when,item.start,Math.max(.1,item.end-item.start));
-
-  if(incomingCross>0){
-    g.gain.setValueCurveAtTime(gainCurve(0,1),when,incomingCross);
-  }
-
-  activeNodes.push(src,low,hp,lp,g,master);
-  return {src,low,hp,lp,g,master,when,rate,dur,item};
-}
-function applyBassSwap(outRt,inRt,start,dur,strength=1){
-  const t0=start,t1=start+dur;
-  outRt.low.gain.setValueAtTime(0,t0);
-  outRt.low.gain.linearRampToValueAtTime(-22*strength,t0+dur*.58);
-  inRt.low.gain.setValueAtTime(-22*strength,t0);
-  inRt.low.gain.linearRampToValueAtTime(0,t0+dur*.58);
-
-  // Slight HP on outgoing toward end; incoming remains full.
-  outRt.hp.frequency.setValueAtTime(24,t0);
-  outRt.hp.frequency.exponentialRampToValueAtTime(160,t1);
-
-  outRt.g.gain.cancelScheduledValues(t0);
-  outRt.g.gain.setValueAtTime(1,t0);
-  outRt.g.gain.setValueCurveAtTime(gainCurve(1,0),t0,dur);
-}
-function applyFilterMix(outRt,inRt,start,dur,strength=1){
-  const t0=start,t1=start+dur;
-  outRt.hp.frequency.setValueAtTime(24,t0);
-  outRt.hp.frequency.exponentialRampToValueAtTime(420*strength,t1);
-
-  inRt.lp.frequency.setValueAtTime(Math.max(900,2400/strength),t0);
-  inRt.lp.frequency.exponentialRampToValueAtTime(20000,t0+dur*.72);
-
-  outRt.low.gain.setValueAtTime(0,t0);
-  outRt.low.gain.linearRampToValueAtTime(-16*strength,t0+dur*.62);
-  inRt.low.gain.setValueAtTime(-14*strength,t0);
-  inRt.low.gain.linearRampToValueAtTime(0,t0+dur*.62);
-
-  outRt.g.gain.cancelScheduledValues(t0);
-  outRt.g.gain.setValueAtTime(1,t0);
-  outRt.g.gain.setValueCurveAtTime(gainCurve(1,0),t0,dur);
-}
-function applyEchoOut(outRt,inRt,start,dur,strength=1){
-  const ctx=getCtx();
-  const fx=makeEchoSend(ctx,outRt.lp,outRt.master,.26*strength,.19);
-  activeNodes.push(fx.send,fx.delay,fx.fb,fx.wet);
-
-  const t0=start,t1=start+dur;
-  fx.send.gain.setValueAtTime(.08,t0);
-  fx.send.gain.linearRampToValueAtTime(.48*strength,t0+dur*.45);
-
-  outRt.hp.frequency.setValueAtTime(24,t0);
-  outRt.hp.frequency.exponentialRampToValueAtTime(700*strength,t1);
-
-  outRt.g.gain.cancelScheduledValues(t0);
-  outRt.g.gain.setValueAtTime(1,t0);
-  outRt.g.gain.exponentialRampToValueAtTime(.001,t0+dur*.72);
-
-  inRt.g.gain.cancelScheduledValues(t0);
-  inRt.g.gain.setValueAtTime(.001,t0);
-  inRt.g.gain.exponentialRampToValueAtTime(1,t0+dur*.85);
-}
-function applyBrakeDrop(outRt,inRt,start,dur,strength=1){
-  const t0=start,t1=start+dur;
-  const r0=outRt.src.playbackRate.value;
-  outRt.src.playbackRate.setValueAtTime(r0,t0);
-  // "brake": slow outgoing deck aggressively then cut.
-  outRt.src.playbackRate.exponentialRampToValueAtTime(Math.max(.38,.58/strength),t0+dur*.78);
-
-  outRt.lp.frequency.setValueAtTime(20000,t0);
-  outRt.lp.frequency.exponentialRampToValueAtTime(900,t0+dur*.78);
-  outRt.g.gain.cancelScheduledValues(t0);
-  outRt.g.gain.setValueAtTime(1,t0);
-  outRt.g.gain.exponentialRampToValueAtTime(.001,t0+dur*.82);
-
-  // Incoming is held then punched in near the end.
-  inRt.g.gain.cancelScheduledValues(t0);
-  inRt.g.gain.setValueAtTime(.001,t0);
-  inRt.g.gain.setValueAtTime(.001,t0+dur*.62);
-  inRt.g.gain.exponentialRampToValueAtTime(1,t1);
-  inRt.hp.frequency.setValueAtTime(180,t0);
-  inRt.hp.frequency.exponentialRampToValueAtTime(24,t1);
-}
-async function scheduleChain(i,rt,token){
-  if(token!==playToken||!plan)return;
-  const item=plan.items[i];
-  $("#now").innerHTML=`<div class="tiny">NOW ${i+1}/${plan.items.length}</div><b>${esc(item.track.title)}</b><div class="meta">${item.track.bpm.toFixed(1)} BPM · ${esc(item.track.camelot)}</div>`;
-
-  if(i>=plan.items.length-1){
-    const wait=Math.max(0,(rt.when+rt.dur-getCtx().currentTime)*1000);
-    setTimeout(()=>{if(token===playToken)stopMix()},wait+500);
-    return;
-  }
-
-  const tr=plan.transitions[i],nextItem=plan.items[i+1];
-  try{
-    const nextBuf=await decodeFile(nextItem.track.file);
-    if(token!==playToken)return;
-
-    let nextRate=1;
-    if((tr.type==="Bass Swap 16"||tr.type==="Filter Mix 8") && Math.abs((tr.syncRatio||1)-1)>.001){
-      nextRate=tr.syncRatio;
-    }
-
-    const transStart=rt.when+rt.dur-tr.cross;
-    const nextRt=createRuntime(nextBuf,nextItem,transStart,nextRate,tr.cross);
-    const strength=tr.fxStrength||1;
-
-    if(tr.type==="Bass Swap 16"){
-      applyBassSwap(rt,nextRt,transStart,tr.cross,strength);
-    }else if(tr.type==="Filter Mix 8"){
-      applyFilterMix(rt,nextRt,transStart,tr.cross,strength);
-    }else if(tr.type==="Echo Out"){
-      applyEchoOut(rt,nextRt,transStart,tr.cross,strength);
-    }else{
-      applyBrakeDrop(rt,nextRt,transStart,tr.cross,strength);
-    }
-
-    // After a beatmatched transition, gently return the incoming track to its native tempo.
-    if(nextRate!==1){
-      const settle=Math.min(12,Math.max(4,tr.cross*.55));
-      const settleStart=transStart+tr.cross;
-      nextRt.src.playbackRate.setValueAtTime(nextRate,settleStart);
-      nextRt.src.playbackRate.linearRampToValueAtTime(1,settleStart+settle);
-    }
-
-    log(`${item.track.title} → ${nextItem.track.title} / ${tr.type} / ${tr.cross.toFixed(1)}s / rate ${nextRate.toFixed(3)}`);
-
-    const ms=Math.max(50,(transStart-getCtx().currentTime)*1000+220);
-    setTimeout(()=>{if(token===playToken)scheduleChain(i+1,nextRt,token)},ms);
-  }catch(err){
-    log(`playback error: ${err.message}`);
-    stopMix();
-  }
-}
-$("#playBtn").addEventListener("click",async()=>{
-  if(!plan||!plan.items.length)return;
-  stopMix();
-  const token=++playToken;
-  const ctx=getCtx();
-  await ctx.resume();
-  $("#playBtn").disabled=true;
-  $("#stopBtn").disabled=false;
-  try{
-    const first=plan.items[0];
-    const buf=await decodeFile(first.track.file);
-    if(token!==playToken)return;
-    const when=ctx.currentTime+.22;
-    const rt=createRuntime(buf,first,when,1,0);
-    scheduleChain(0,rt,token);
-  }catch(err){
-    log(`start error: ${err.message}`);
-    stopMix();
-  }
-});
+$("#playBtn").addEventListener("click",startMix);
+$("#stopBtn").addEventListener("click",stopAll);
 </script>
 </body>
 </html>
