@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v13 Playlist Diagnostic</title>
+<title>AI DJ v14 Playlist Diagnostic</title>
 <style>
 :root{color-scheme:dark;--card:#141821;--line:#2a3140;--muted:#98a2b3;--green:#1ed760;--blue:#66b3ff;--red:#ff8d8d}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080a0f,#0e1219);color:#f8fafc;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
@@ -21,7 +21,7 @@ button,a.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px 1
 </head>
 <body>
 <main>
-<h1>AI DJ v13 Playlist Diagnostic</h1>
+<h1>AI DJ v14 Playlist Diagnostic</h1>
 <p class="sub">Spotifyの「AI DJ NOW」をそのまま読み込み、30曲をFreqBlogで診断します。</p>
 
 <section class="card">
@@ -819,7 +819,6 @@ async function generate(){
   finally{genBtn.disabled=!token()}
 }
 
-$("#knownRatio").addEventListener("input",e=>$("#ratioText").textContent=e.target.value+"%");
 $("#connectBtn").addEventListener("click",connect);
 $("#lastfmTestBtn").addEventListener("click",testLastfm);
 $("#diagBtn").addEventListener("click",runFreeDbDiagnostic);
