@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v21 Crate Selector</title>
+<title>AI DJ v20.2 Full Audio Scan</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v21 Crate Selector</h1>
-<p class="sub">候補を多めに集めて「繋ぎにくい曲を落としてから」30曲を選ぶ版。Sonic特徴・BPM・Key・Energyを使い、悪い繋ぎを末尾に押し付けません。</p>
+<h1>AI DJ v20.2 Full Audio Scan</h1>
+<p class="sub">v20の繋ぎロジックはそのまま。Spotify対応表にある全曲を一括スキャンし、FreqBlog取得済み / 未取得をログに出せます。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -51,7 +51,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="100" step="5" value="100"></div>
 <div><label>Spotifyプレイリスト名</label><input id="setName" type="text" value="AI DJ NOW"></div>
 </div>
-<p class="small">出力30曲なら、既知曲は最大50曲前後を候補として解析し、繋ぎにくい曲を外してからセットを組みます。未知曲がquotaで取れない場合は既知曲で自動補充します。同じ主アーティストは最大3曲連続まで。</p>
+<p class="small">未知曲は「同じアーティストだから」ではなく、18特徴の音響類似を優先します。曲順では同じ主アーティストの連続を最大3曲に制限します（Spotifyから作曲者クレジットを常に取得できないため、主アーティストを代理にしています）。</p>
 
 <div style="margin-top:12px"><label>既知曲のレーン</label>
 <div class="lanes">
@@ -71,7 +71,83 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </section>
 
 <section class="card">
-<span class="badge">3. 結果</span>
+<span class="badge">3. 手動音響情報</span>
+<p class="small">
+FreqBlogで取得できなかった曲はここに自動で追加されます。<b>BPMだけでも保存可能</b>ですが、
+DJの繋ぎ判定には <b>BPM + Camelot Key</b> の登録がおすすめです。
+Energyなどは分かる場合だけ入れてください。手動登録はFreqBlogより優先されます。
+</p>
+
+<div class="row" style="margin-top:12px">
+<div>
+<label>曲</label>
+<select id="manualTrackSelect"><option value="">未取得曲を選択</option></select>
+</div>
+<div>
+<label>BPM</label>
+<input id="manualBpm" type="number" min="30" max="300" step="0.01" placeholder="例: 128">
+</div>
+<div>
+<label>Key / Camelot</label>
+<input id="manualKey" type="text" placeholder="例: C#-Minor または 12A">
+</div>
+<div>
+<label>Energy 0〜1（任意）</label>
+<input id="manualEnergy" type="number" min="0" max="1" step="0.01" placeholder="例: 0.85">
+</div>
+<div>
+<label>Danceability 0〜1（任意）</label>
+<input id="manualDance" type="number" min="0" max="1" step="0.01">
+</div>
+<div>
+<label>Acousticness 0〜1（任意）</label>
+<input id="manualAcoustic" type="number" min="0" max="1" step="0.01">
+</div>
+<div>
+<label>Instrumentalness 0〜1（任意）</label>
+<input id="manualInstr" type="number" min="0" max="1" step="0.01">
+</div>
+<div>
+<label>Mood（任意）</label>
+<select id="manualMood">
+<option value="">未設定</option>
+<option value="energetic">energetic</option>
+<option value="happy">happy</option>
+<option value="neutral">neutral</option>
+<option value="calm">calm</option>
+<option value="melancholic">melancholic</option>
+<option value="tense">tense</option>
+</select>
+</div>
+<div>
+<label>Genre（任意）</label>
+<input id="manualGenre" type="text" placeholder="例: electronic">
+</div>
+</div>
+
+
+<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+  <label>全曲音響スキャン</label>
+  <p class="small">
+    Spotify対応表キャッシュ内の曲を重複除去して、1曲ずつFreqBlog照合します。
+    既存のFreqBlogキャッシュと手動登録を最優先するため、同じ曲を再取得してAPI枠を無駄にしません。
+    Spotify APIは使いません。
+  </p>
+  <button id="scanAllBtn" class="primary">全曲をスキャン</button>
+  <button id="stopScanBtn" class="secondary" disabled>スキャン停止</button>
+  <button id="copyScanLogBtn" class="secondary">スキャン結果をコピー</button>
+  <p id="scanStatus" class="small">未実行</p>
+</div>
+
+<button id="saveManualBtn" class="primary">手動情報を保存</button>
+<button id="deleteManualBtn" class="secondary">この曲の手動情報を削除</button>
+<button id="clearMissingBtn" class="secondary">未取得リストだけ消去</button>
+
+<div id="manualStatus" class="small" style="margin-top:10px">未取得曲はまだありません。</div>
+</section>
+
+<section class="card">
+<span class="badge">4. 結果</span>
 <div id="summary" class="small">まだ生成していません。</div>
 <div id="tracks"></div>
 <a id="playlistLink" class="btn primary" target="_blank" rel="noopener" style="display:none">Spotifyで開く</a>
@@ -87,7 +163,7 @@ const SPOTIFY="https://api.spotify.com/v1";
 const KNOWN=[{"artist":"ふゆしずくEP (2020)","track":"Shogo Nomura","weight":2.5,"lane":"Chill / Night"},{"artist":"Saku","track":"ピュアー / 初音ミク　楽曲解説","weight":5.0,"lane":"Vocal Synth"},{"artist":"Saku","track":"ピュアー / 初音ミク","weight":5.0,"lane":"Vocal Synth"},{"artist":"莉犬","track":"ツイートツイート","weight":2.5,"lane":"Electronic"},{"artist":"Yunomi (feat. nicamoq)","track":"Reflection","weight":5.0,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"ENDLESS CIDER (feat. Such)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"zeroth","track":"spark ignition (feat. 高城みよ)","weight":7.0,"lane":"Speed Garage"},{"artist":"Saku","track":"シルエット (feat. 初音ミク)","weight":7.0,"lane":"Vocal Synth"},{"artist":"Seaskape","track":"Splatoon [OST]","weight":2.5,"lane":"Game / Electronic"},{"artist":"Yunomi","track":"パラサイトエンジェル (feat. 初音ミク)","weight":7.0,"lane":"Vocal Synth"},{"artist":"DENONBU","track":"フューチャコアー","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Tsubusare BOZZ","track":"シグナル (feat. shully)","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Tsubusare BOZZ","track":"アレは偶然じゃない説 (feat. madoka*)","weight":7.0,"lane":"Speed Garage"},{"artist":"Mysteka","track":"Alkaloid (feat. ねんね)","weight":7.0,"lane":"Speed Garage"},{"artist":"DENONBU","track":"Beat Me! (feat. kamome sano)","weight":6.0,"lane":"Future / Kawaii"},{"artist":"コトダマ (feat. 重音テト)","track":"kamome sano","weight":4.5,"lane":"Future / Kawaii"},{"artist":"nasaki","track":"Stay in my sight","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Purukichi","track":"Colors","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"shutdown()","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"線香花火 (KBSNK Remix)","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"perfect blue (Original Mix)","weight":7.0,"lane":"Future / Kawaii"},{"artist":"雀魂","track":"じゃんたま- 気ままに 対局 BGM 作業用","weight":2.5,"lane":"Electronic"},{"artist":"Mameyudoufu","track":"Insomnia (feat. 奈良ひより)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Change [Instrumental]","weight":5.5,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"sweet syrup","weight":6.0,"lane":"Future / Kawaii"},{"artist":"BOURYOKUTEKINIKAWAII","track":"アムネジアの花","weight":4.5,"lane":"Electronic"},{"artist":"Dirty Androids","track":"Hazy Sky","weight":5.5,"lane":"Future / Kawaii"},{"artist":"Kyo Hanabasami","track":"Moment (kamome sano Remix)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Full Moon","weight":5.5,"lane":"Future / Kawaii"},{"artist":"MOTTO MUSIC","track":"雨模様","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"星のアリス","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"明けない夜、醒めない夢 (feat. nicamoq)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"CY8ER","track":"もしもしじゃぽん","weight":2.5,"lane":"Electronic"},{"artist":"kamome sano","track":"Init ()","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"internet city (WRLD Remix)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"never ending","weight":5.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Find Me (feat. ミディ)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"moi","weight":5.0,"lane":"Future / Kawaii"},{"artist":"poplavor","track":"Astronomical Optical Interferometry","weight":2.5,"lane":"Electronic"},{"artist":"DENONBU","track":"twilight (Prod. Tomggg)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"waiai","track":"DRIVE WITH U (feat. mikanzil)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"It All Starts Right Now","weight":5.0,"lane":"Future / Kawaii"},{"artist":"TEMPLIME feat.mikanzil","track":"ふわり（仮）","weight":4.5,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Cat's Meow","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Mylta","track":"My life is mine alone! (feat. ねんね)","weight":6.5,"lane":"Speed Garage"},{"artist":"Mysteka","track":"NoEscape (feat. ユキムラチャン！)","weight":7.0,"lane":"Speed Garage"},{"artist":"Mameyudoufu","track":"ハロー・アンド・グッバイ (feat. yoei.)","weight":7.0,"lane":"Speed Garage"},{"artist":"kamome sano","track":"infomorph","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Sweet Illusion","weight":4.5,"lane":"Future / Kawaii"},{"artist":"PSYQUI","track":"Don't you want me (feat. Such)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"madeleine","weight":4.5,"lane":"Future / Kawaii"},{"artist":"You","track":"Comet (kamome sano Remix) (feat. nayuta)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"realism","weight":5.5,"lane":"Future / Kawaii"},{"artist":"Release","track":"まぼろしのほし","weight":3.0,"lane":"Electronic"},{"artist":"mikanzil","track":"サテライト","weight":5.0,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"Bass Music Is Hard Yo","weight":4.5,"lane":"Future / Kawaii"},{"artist":"rejection","track":"Moony eyes (feat. Such)","weight":3.0,"lane":"Electronic"},{"artist":"Chroma","track":"夜空を飛んでく夢を見て (feat. みかん汁)","weight":2.5,"lane":"Electronic"},{"artist":"Dirty Androids","track":"Aquatic World","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"[please] replay","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"うわごとのうた","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Dirty Androids","track":"Universe (feat. Nicole Curry)","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"たわごとのうた","weight":7.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"little cheeks","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"Disco Nostalgia","weight":4.0,"lane":"Game / Electronic"},{"artist":"kamome sano","track":"[Still Want a] Sugarless World?","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"thank you for playing (even though there's no candy anywhere)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Srav3R","track":"Future Raver (feat. PSYQUI)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"MOTTO MUSIC","track":"Moonlit","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"One Step Closer","weight":4.5,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"Rainmaker","weight":4.5,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"mie scattering","weight":4.5,"lane":"Future / Kawaii"},{"artist":"犬吠埼紫杏 (CV: 長谷川玲奈)","track":"Eat Sleep Dance (feat. Moe Shop) [DC Mizey Remix]","weight":2.5,"lane":"Electronic"},{"artist":"ぱかチューブっ!【ウマ娘公式】","track":"【ウマ娘 プリティーダービー】「UNLIMITED IMPACT (Shinichi Osawa Remix)」","weight":2.5,"lane":"Electronic"},{"artist":"kamome sano","track":"Sucrose Generator","weight":5.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"sun and me","weight":5.5,"lane":"Future / Kawaii"},{"artist":"PSYQUI","track":"Hype (sky_delta Remix) (feat. Such)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Bullet","track":"time Bounce","weight":3.0,"lane":"Electronic"},{"artist":"kamome sano feat. Marpril","track":"キミエモーション","weight":4.5,"lane":"Future / Kawaii"},{"artist":"MOTTO MUSIC","track":"サカサマシグナル (feat. メトロミュー)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"m-flo","track":"tell me tell me kamome sano remix","weight":2.5,"lane":"Future / Kawaii"},{"artist":"kamome sano / Limonène","track":"charlotte aux framboises (colate+kamome sano Remix) [feat. mami] (Audio Only)","weight":6.5,"lane":"Future / Kawaii"},{"artist":"picco","track":"【#電音部 】Find Me feat. ミディ (picco Remix) [Future Core / Future Bass］","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Chroma","track":"恋の空中分解 (feat. みかん汁)","weight":3.0,"lane":"Electronic"},{"artist":"ITSUKI MOE MUSIC","track":"Stay Alive (Sanaas Remix)","weight":2.5,"lane":"Electronic"},{"artist":"Asterisk","track":"Moonlight (Sanaas Remix)","weight":2.5,"lane":"Electronic"},{"artist":"kamome sano","track":"soda pop","weight":4.0,"lane":"Future / Kawaii"},{"artist":"PSYQUI","track":"Don't you Want Me (Mameyudoufu Remix) (feat. Such)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"not found [feat. ina (QQIQ)]","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"Wave (feat. 藍月なくる) Guitar Cover","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"夢色パレード (w/ 桃箱 & miko)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"黒鉄たま (CV: 秋奈)","track":"Catch a Fire (Prod. ケンモチヒデフミ) [Mitsunori Ikeda Remix]","weight":2.5,"lane":"Electronic"},{"artist":"H. G. Caselnes","track":"【ウマ娘プリティーダービー】凱旋門賞 レースBGM（ファンファーレ無し）Reach for the stars プロジェクト L‘Arc","weight":2.5,"lane":"Electronic"},{"artist":"re:plus","track":"Sepia","weight":2.5,"lane":"Electronic"},{"artist":"Se-U-Ra","track":"4小節ごとにジャンルが変わるHifumi Daisuki.Remix","weight":2.5,"lane":"Electronic"},{"artist":"水星 (covered by ENO)","track":"Arranged cover- AKROGLAM","weight":2.5,"lane":"Electronic"},{"artist":"YO","track":"KAI Disco (新目鳥 Remix)","weight":2.5,"lane":"Electronic"},{"artist":"電音部チャンネル","track":"🎧Dance Music Mix | Club Remixs🎧 #DENONBU  #電音部","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Change","weight":6.0,"lane":"Future / Kawaii"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 192. Chilling Out","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 164. Kitsunebi","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 163. Trigger For Ambition","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 127. Wave & Conquer","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 115. Fall into the rabbit hole","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 109. Dolce Biblioteca","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 96. OperationD","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 95. JACKPOT 777","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 86. Summertime Archive","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 85. Library of Omen","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 82. Hifumi Daisuki","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 80. Colorful Beach","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 65. Accelerator","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 56. Fearful Utopia","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 49. Mechanical JUNGLE (Hi-Tech Full On Mix)","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 42. Glitch Street","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 33. Vivid Night","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 2. Luminous Memory","weight":2.5,"lane":"Game / Electronic"},{"artist":"White Notes","track":"[Blue Archive] Get Set, Go! Event BGM | Goal Wo Nerae! (Piano)","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 174. Tok9 Train","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 79. Summer Bounce","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 20. Tech N Tech","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 117. KARAKURhythm","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 120. Dive into Summer","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 99. nesno wons","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 122. Underwater Jungle","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 6. Funky Road","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 4. Lovely Picnic","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 69. Snow Pantomime","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 68. Virtual Storm (Hard Arrange)","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 64. Pixel Time","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 61. Rolling Beat","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 58. SAKURA PUNCH","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 54. After The Beep","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 51. ARES","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 48. Out of Control","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 39. Water Drop","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 24. Endless Carnival","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 22. Daily Routine 24/7","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 19. Virtual Storm","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 9. Midsummer Cat","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 8. Shady Girls","weight":2.5,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 1. Constant Moderato","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 148. Polyphonic","weight":3.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 113. Usagi Flap","weight":3.0,"lane":"Game / Electronic"},{"artist":"Salted Yaduka","track":"【ウマ娘 プリティーダービー】Make a new track!! シニア級育成BGM (Guitar Cover)【TAB】【Umamusume: Pretty Derby】","weight":2.5,"lane":"Electronic"},{"artist":"necobeam (ねこビーム)","track":"【30分耐久】フリーBGM かわいい ポップ アップテンポ 明るい ライブ配信 作業用","weight":2.5,"lane":"Electronic"},{"artist":"シュガーの動画遊び","track":"【1時間耐久】Make a new track!! シニア級育成BGM【ウマ娘】","weight":2.5,"lane":"Electronic"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】ローファイ少女は今日も寝不足(Lo-fi girl always lacks sleep) / しゃろう【公式】","weight":3.0,"lane":"Chill / Night"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】さみしいおばけと東京の月 (The lonely ghost and the moon of Tokyo) / しゃろう【公式】","weight":2.5,"lane":"Game / Electronic"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】週末京都現実逃避 (Escape from reality in Kyoto on the weekend) / しゃろう【公式】","weight":2.5,"lane":"Chill / Night"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】SUMMER TRIANGLE / しゃろう【公式】","weight":2.5,"lane":"Chill / Night"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】2:23 AM / しゃろう【公式】","weight":2.5,"lane":"Chill / Night"},{"artist":"ヨシキP","track":"【Remix】YO KAI Disco（オーソドックスな感じのアレンジ）","weight":2.5,"lane":"Electronic"},{"artist":"おさまるまめ","track":"まもるくんは呪われてしまった! Lost Wind【ピアノ楽譜】","weight":2.5,"lane":"Game / Electronic"},{"artist":"[Arrange] I have been cursed!! [Yo","track":"kai Disco]","weight":2.5,"lane":"Electronic"},{"artist":"Yousuke Yasui","track":"Bless you! Boy (Super Arrange Version)","weight":2.5,"lane":"Electronic"},{"artist":"Yousuke Yasui","track":"Kekkaishi: Kokubourou Shuurai OST - Unknown track title","weight":3.0,"lane":"Game / Electronic"},{"artist":"[Neat VGM #1] Eschatos Arrange","track":"Stellar Light feat. IA ~ Yousuke Yasui","weight":3.0,"lane":"Game / Electronic"},{"artist":"MrTimelessWinter","track":"Nostalgic 東方 Chiptune Touhou 182","weight":3.0,"lane":"Game / Electronic"},{"artist":"Mamoru","track":"kun Has Been Cursed! Meikai Katsugeki Arrange Full","weight":2.5,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"27 Karakuri Spirits -extend version-","weight":3.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"25 Tribulation of Curse","weight":2.5,"lane":"Game / Electronic"},{"artist":"桜餅ルナ","track":"pink soda (kawaii future bass風)【可愛いフリーBGM】","weight":2.5,"lane":"Electronic"},{"artist":"Yousuke Yasui","track":"YO-KAI Disco [MEIKAI ARRANGE VERSION]","weight":3.0,"lane":"Game / Electronic"},{"artist":"NewerTheme","track":"Karakuri Spirits (MEIKAI ARRANGE VERSION) 1 hour Extended","weight":2.5,"lane":"Electronic"},{"artist":"C418","track":"Sweden (Caution & Crisis Remix)","weight":2.5,"lane":"Electronic"},{"artist":"The Big Moon","track":"Your Light (Official Video)","weight":2.5,"lane":"Electronic"},{"artist":"ε","track":"【作業用BGM】 東方大好きでも知らなくても楽しめる原曲メドレー　前編","weight":2.5,"lane":"Game / Electronic"},{"artist":"OpenTracks (formerly DOVA-SYNDROME)","track":"カナリアスキップ @ フリーBGM DOVA-SYNDROME OFFICIAL YouTube CHANNEL","weight":2.5,"lane":"Electronic"},{"artist":"VOIA","track":"Mochi Moshi (feat. Keii) [Creative Commons]","weight":2.5,"lane":"Electronic"},{"artist":"kamome sano","track":"feel (feat. mami)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"lovesick (feat. ぷにぷに電機)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Saku","track":"ピュアー","weight":7.0,"lane":"Vocal Synth"},{"artist":"Saku","track":"ビジブル","weight":7.0,"lane":"Vocal Synth"},{"artist":"Saku","track":"縫製","weight":7.0,"lane":"Vocal Synth"},{"artist":"Saku","track":"芯 / 初音ミク","weight":7.0,"lane":"Vocal Synth"},{"artist":"Sight Nonnon","track":"mi","weight":5.5,"lane":"Electronic"},{"artist":"DENONBU","track":"MIDNIGHT TOWN (Prod. AmamiyaMaako)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"Rigel","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"水難警報","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"evergreen pt.2","weight":7.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"missing link","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"さよならインベーダー","weight":5.5,"lane":"Future / Kawaii"},{"artist":"ガチで恋するお前らへ","track":"Yunomi Remix-","weight":1.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"pop music","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Mylta","track":"まっさらな春を歩いていくんだ (feat. 照)","weight":3.5,"lane":"Speed Garage"},{"artist":"Inverted Silence","track":"Falling Deep (feat. RANASOL)","weight":3.5,"lane":"Speed Garage"},{"artist":"Release","track":"蛹 (feat. 花澤里都夢)","weight":3.5,"lane":"Speed Garage"},{"artist":"asuzora","track":"KISS ME AT NIGHT (feat. 紫崎 雪)","weight":3.5,"lane":"Speed Garage"},{"artist":"Aethral","track":"Purple Rain (feat. 羽子田チカ)","weight":3.5,"lane":"Speed Garage"},{"artist":"YUUHI","track":"Moonlit Stray Sheep (feat. 千花)","weight":3.5,"lane":"Speed Garage"},{"artist":"kamome sano","track":"Lethal Cream","weight":4.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"2147483647","weight":4.0,"lane":"Future / Kawaii"},{"artist":"iroha(sasaki)","track":"[Official] 炉心融解 feat.鏡音リン  /  Meltdown feat.Kagamine Rin","weight":2.0,"lane":"Electronic"},{"artist":"Marpril","track":"Girly Cupid","weight":2.5,"lane":"Electronic"},{"artist":"Shion Hinano","track":"ダメって言えないの (Original Mix)","weight":2.5,"lane":"Electronic"},{"artist":"Yunomi","track":"ミラクルシュガーランド (feat. 桃箱)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"なんでもないこと","track":"カモメサノダブルクリックバンド feat.みかん汁","weight":2.5,"lane":"Electronic"},{"artist":"MOTTO MUSIC","track":"full of spells (feat. Such)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Release","track":"クリスタル (feat. アンテナガール)","weight":2.5,"lane":"Electronic"},{"artist":"Yunomi","track":"めんたいコズミック (feat. nicamoq)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"恋のうた (feat. 由崎司)","weight":5.0,"lane":"Future / Kawaii"},{"artist":"SHIN-SHINJUKU GR SCHOOL","track":"ハカハカイプリンセス (Extended Hakai Version) (Prod. Shogo Nomura)","weight":2.5,"lane":"Chill / Night"},{"artist":"Shogo Nomura","track":"egoist","weight":4.0,"lane":"Chill / Night"},{"artist":"Limonène","track":"Please Stop The Music (kamome sano Remix)","weight":7.0,"lane":"Future / Kawaii"},{"artist":"ChoKaguyaHime","track":"ray (超かぐや姫！ Version)","weight":2.0,"lane":"Electronic"},{"artist":"supercell","track":"メルト (かぐや ver.) [CPK! Remix]","weight":2.5,"lane":"Electronic"},{"artist":"DENONBU","track":"Hyper Bass (feat. Yunomi)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"Midnight grow (feat. mami)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Patra Channel / 周防パトラ","track":"【original】イミグレーションfeat.Yunomi【周防パトラ】","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"idealism","weight":7.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"夜明けのアンセム (Prod. 雄之助)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"月読のダンス (Prod. takashima)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Keep it simple (Prod. KOTONOHOUSE)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Zekk","track":"Falling Down (feat. Renko & TRIANGLE)","weight":1.5,"lane":"Electronic"},{"artist":"Camellia","track":"Night Fog (feat. Luschel)","weight":2.5,"lane":"Electronic"},{"artist":"ARAN","track":"Sunny After Rain (feat. Kanata.N)","weight":2.5,"lane":"Electronic"},{"artist":"Release","track":"Feedback","weight":1.5,"lane":"Electronic"},{"artist":"lapix","track":"Point of No Return (feat. 紫月)","weight":1.5,"lane":"Electronic"},{"artist":"Limonène","track":"Parallel World (Cover)","weight":7.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"Let You Go","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Poppin'Party","track":"キラキラだとか夢だとか ～Sing Girls～","weight":1.5,"lane":"Electronic"},{"artist":"DENONBU","track":"いただきバベル (Prod. ケンモチヒデフミ)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"tokiwa","track":"Fairydust (Original Mix)","weight":1.5,"lane":"Electronic"},{"artist":"DENONBU","track":"Distortion (feat. Yunomi)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"Inverted Silence","track":"Fly Away (feat. Gurni.)","weight":4.0,"lane":"Speed Garage"},{"artist":"lapix","track":"ボーイ・ミート・ミー！ (feat. Eye)","weight":3.5,"lane":"Speed Garage"},{"artist":"zeroth","track":"hollow note (feat. Kanata.N)","weight":5.0,"lane":"Speed Garage"},{"artist":"Release","track":"Lov3 Me! (feat. mami)","weight":3.5,"lane":"Speed Garage"},{"artist":"asuzora","track":"DON'T (feat. RANASOL)","weight":3.5,"lane":"Speed Garage"},{"artist":"muyu","track":"wiz Satellite (feat. 紫崎 雪)","weight":3.5,"lane":"Speed Garage"},{"artist":"Yunomi","track":"星降る夜のアデニウム (feat. nicamoq)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"Yunomi","track":"サ・ク・ラ・サ・ク (feat. nicamoq)","weight":4.5,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Eat Sleep Dance (feat. Moe Shop)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"mikanzil","track":"Pallet","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Mameyudoufu","track":"Sunday Night (feat. Kanata.N)","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"overdone","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"0光年の孤独 (Chroma Remix)","weight":6.0,"lane":"Future / Kawaii"},{"artist":"0光年の孤独","track":"Limonène","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"Please Stop The Music","weight":6.0,"lane":"Future / Kawaii"},{"artist":"sour sweet","track":"Limonène","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"nevergreen","weight":6.0,"lane":"Future / Kawaii"},{"artist":"pop music","track":"Limonène","weight":3.5,"lane":"Future / Kawaii"},{"artist":"kamome sano / Limonène","track":"Limonène × Sanaas「Petrichor」","weight":6.0,"lane":"Future / Kawaii"},{"artist":"Dirty Androids","track":"On The West Coastline (feat. ぷにぷに電機)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Rigel (C","track":"Show Remix)","weight":1.0,"lane":"Electronic"},{"artist":"DENONBU","track":"ルララルララ","weight":2.5,"lane":"Future / Kawaii"},{"artist":"PSYQUI","track":"就寝御礼 (Original Mix)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Zekk","track":"Gloomy Flash (feat. mami)","weight":1.0,"lane":"Electronic"},{"artist":"Such","track":"センチメンタルハートボーイ (feat. PSYQUI)","weight":1.0,"lane":"Future / Kawaii"},{"artist":"tokiwa","track":"Continue (feat. 小鳥遊めぐみ)","weight":1.0,"lane":"Electronic"},{"artist":"Braven","track":"It's gonna be alright (feat. shully)","weight":1.0,"lane":"Electronic"},{"artist":"DENONBU","track":"Catch a Fire (Prod. ケンモチヒデフミ)","weight":2.5,"lane":"Future / Kawaii"},{"artist":"Kenshi Yonezu","track":"Ameno Gaironi Yakouchuu","weight":1.0,"lane":"Electronic"},{"artist":"DENONBU","track":"探す獣","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Infinite Colour","weight":2.5,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"clover (feat. 伊ヶ崎綾香) [2016]","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"bleak future by TEMPLIME","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Dive by Neko Hacker","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Got to Know by Masayoshi Iimori","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Ct","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"PRECIOUS NIGHT (Prod.ハレトキドキ)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"emeth by DC Mizey","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Love me harder (feat. Shogo & 早川博隆)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"＃電音部​","track":"港白金女学院-『Where Is The Love (feat. Shogo&早川博隆)』Music Video 【ベストアルバム予約受付中！】","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"ベルカ (feat. ミフメイ)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Spot AA by maeshima soshi","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Sweet Operation by ミディ","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"We Will by Shinpei Nasuno","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"I'm alive with this town by KOTONOHOUSE","weight":3.0,"lane":"Future / Kawaii"},{"artist":"kamome sano","track":"A Day in the Patisserie","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Yunomi (feat. Rinahamu)","track":"Fashion @Yunomichannel","weight":3.5,"lane":"Future / Kawaii"},{"artist":"Release","track":"シンデレラベイビー (feat. アンテナガール)","weight":1.5,"lane":"Electronic"},{"artist":"Yunomi","track":"銀河鉄道のペンギン (feat. nicamoq)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"Mani Mani (Prod. TAKU INOUE)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"トアルトワ (feat. TAKU INOUE)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"Limonène","track":"ついに二人きり (Tsubusare BOZZ Remix)","weight":4.0,"lane":"Future / Kawaii"},{"artist":"DENONBU","track":"麻布アウトバーン (Prod. ケンモチヒデフミ)","weight":3.0,"lane":"Future / Kawaii"},{"artist":"rejection","track":"White Canvas (feat. 藍月なくる)","weight":1.5,"lane":"Electronic"},{"artist":"LAUGH DiAMOND(takamura hibiki、kazamaturi asahi、yamada kanon)","track":"シーサイド・ブルー (「シャインポスト」)","weight":1.5,"lane":"Electronic"},{"artist":"電音部チャンネル","track":"#電音部 『Do You Even DJ? (feat. Neko Hacker)』Music Video","weight":3.0,"lane":"Future / Kawaii"},{"artist":"BOURYOKUTEKINIKAWAII","track":"FUTURE LIGHT","weight":1.5,"lane":"Electronic"},{"artist":"Such","track":"MOON (feat. KBSNK)","weight":1.0,"lane":"Electronic"},{"artist":"MOTTO MUSIC","track":"B (feat. VESPERBELL カスカ)","weight":1.0,"lane":"Future / Kawaii"},{"artist":"LTRise","track":"Shooting Athletes [ Theme 131 ] [ On Your Mark ＠ Millennium ] - Blue Archive","weight":1.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 135. Fruitful Blossom","weight":1.0,"lane":"Game / Electronic"},{"artist":"MO2","track":"ブルーアーカイブ Blue Archive OST 158. Gregorius | Symphony","weight":1.0,"lane":"Game / Electronic"},{"artist":"White Notes","track":"PAN PAKA PAN","weight":1.0,"lane":"Game / Electronic"},{"artist":"CreamPanda2","track":"イトーヨーカドー レジ応援BGM 『Help!』","weight":1.0,"lane":"Electronic"},{"artist":"しゃろう Sharou","track":"【30分耐久フリーBGM】10℃ / しゃろう【公式】","weight":1.0,"lane":"Chill / Night"},{"artist":"【あけまさ】マリオカート実況MK","track":"DS時代のように直ドリをすると速くなるのか？","weight":1.0,"lane":"Electronic"},{"artist":"Megalomachia2","track":"SUPER-REFLEX","weight":1.0,"lane":"Game / Electronic"},{"artist":"commaluigi","track":"【東方Rock】少女さとり ～ 3rd eye 「sound sepher」","weight":1.0,"lane":"Game / Electronic"},{"artist":"Kuchito08","track":"ultraviolet","weight":1.0,"lane":"Game / Electronic"},{"artist":"universe","track":"ギンガフォース　zenith","weight":1.0,"lane":"Game / Electronic"},{"artist":"Yousuke Yasui","track":"Brisa Do Mar","weight":1.0,"lane":"Game / Electronic"},{"artist":"CaptainGordonVGM","track":"Mamorukun Curse! OST - 13 The Curse Again (Revenge Boss)","weight":1.0,"lane":"Game / Electronic"},{"artist":"CaptainGordonVGM","track":"Mamorukun Curse! OST - 19 Mantra (Final Boss 1)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"17 Superhero (False Final Stage)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"12 Will Force (Original Mission)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"09 Tropical Pirates (Southern Countries World)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"07 Lost Wind (Ice Village World - Second Half)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"05 YO KAI Disco (Hell's Entrance World)","weight":1.0,"lane":"Game / Electronic"},{"artist":"Mamorukun Curse! Arrange Tracks","track":"03 Fine Day (Player Select)","weight":1.0,"lane":"Game / Electronic"},{"artist":"FrostieAgain","track":"Karakuri Spirits (MEIKAI ARRANGE)","weight":1.5,"lane":"Game / Electronic"},{"artist":"まもるクンは呪われてしまった！YO","track":"KAI Disco","weight":1.5,"lane":"Game / Electronic"},{"artist":"Custom Robo Videos","track":"Custom Robo V2 OST - Custom Battle 2","weight":1.0,"lane":"Game / Electronic"},{"artist":"yousukeyasui","track":"SURVIVE ( from \"ESCHATOS\" DLC Arrange Version)","weight":1.0,"lane":"Game / Electronic"},{"artist":"universe","track":"Counter Strike  【Nativeinstruments FM8】","weight":1.0,"lane":"Game / Electronic"},{"artist":"YO","track":"KAI Disco (piano cover)","weight":1.5,"lane":"Game / Electronic"},{"artist":"超わかる！授業動画","track":"１次関数とグラフ【中学数学】～１次関数＃１","weight":1.0,"lane":"Game / Electronic"},{"artist":"YO","track":"KAI Disco　詰め合わせ (Arranges)","weight":1.0,"lane":"Electronic"},{"artist":"katukunazawa","track":"東方原曲　永夜抄　４面ボス博麗霊夢のテーマ　少女綺想曲　～ Dream Battle","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　永夜抄　EXTRAボス藤原 妹紅のテーマ　月まで届け、不死の煙","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲   妖々夢　４面ボスプリズムリバー　幽霊楽団～Phantom Ensemble","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　永夜抄　６面Bボス蓬莱山輝夜テーマ　竹取飛翔～Lunatic Princess","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　風神録　EXTRAボス洩矢諏訪子テーマ　ネイティブフェイス","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　地霊殿　EXTRAテーマ　ラストリモート","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲   妖々夢　５面ボス魂魄 妖夢のテーマ　広有射怪鳥事～Till When","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲   妖々夢　６面ボス幽々子　幽雅に咲かせ墨染の桜 ～ Border of Life","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　緋想天　有頂天　有頂天変　～ Wonderful Heaven","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲   妖々夢　PHANTASMボス・八雲 紫のテーマ　ネクロファンタジア","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲  紅魔郷　６面ボスレミリアテーマ　亡き王女の為のセプテット","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲　地霊殿　EXTRAボス古明地こいし　ハルトマンの妖怪少女","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"東方原曲   紅魔郷　３面テーマ　上海紅茶館　～ Chinese Tea","weight":1.0,"lane":"Game / Electronic"},{"artist":"katukunazawa","track":"大空魔術 オリジナル 天空のグリニッジ","weight":1.0,"lane":"Game / Electronic"}];
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const logEl=$("#log"),statusEl=$("#status"),generateBtn=$("#generateBtn"),applySpotifyBtn=$("#applySpotifyBtn"),warmSpotifyBtn=$("#warmSpotifyBtn"),clientIdEl=$("#clientId"),
+const logEl=$("#log"),statusEl=$("#status"),generateBtn=$("#generateBtn"),applySpotifyBtn=$("#applySpotifyBtn"),warmSpotifyBtn=$("#warmSpotifyBtn"),manualTrackSelect=$("#manualTrackSelect"),manualStatus=$("#manualStatus"),clientIdEl=$("#clientId"),
       proxyUrlEl=$("#proxyUrl"),proxyTokenEl=$("#proxyToken"),tracksEl=$("#tracks"),
       playlistLink=$("#playlistLink"),progressEl=$("#progress"),summaryEl=$("#summary");
 
@@ -374,7 +450,288 @@ function fbToMix(b){
     fbId:b.itunes_track_id||b.track_id||null
   };
 }
+
+const MANUAL_AUDIO_KEY="ai_dj_manual_audio_v201";
+const MISSING_AUDIO_KEY="ai_dj_missing_audio_v201";
+
+function readManualAudio(){try{return JSON.parse(localStorage.getItem(MANUAL_AUDIO_KEY)||"{}")}catch{return {}}}
+function writeManualAudio(v){localStorage.setItem(MANUAL_AUDIO_KEY,JSON.stringify(v))}
+function readMissingAudio(){try{return JSON.parse(localStorage.getItem(MISSING_AUDIO_KEY)||"{}")}catch{return {}}}
+function writeMissingAudio(v){localStorage.setItem(MISSING_AUDIO_KEY,JSON.stringify(v))}
+
+function audioRecordKey(x){
+  const isrc=x?.spotify?.external_ids?.isrc||x?.isrc||"";
+  if(isrc)return "isrc:"+String(isrc).toUpperCase();
+  const sid=x?.spotify?.id||"";
+  if(sid)return "spotify:"+sid;
+  return "name:"+keyOf(
+    (x?.spotify?.artists||[]).map(a=>a.name).join(", ")||x?.artist||"",
+    x?.spotify?.name||x?.track||""
+  );
+}
+function numOrNull(v){
+  if(v===null||v===undefined||String(v).trim()==="")return null;
+  const n=Number(v);return Number.isFinite(n)?n:null
+}
+function clamp01OrNull(v){
+  const n=numOrNull(v);return n===null?null:Math.max(0,Math.min(1,n))
+}
+const CAMELOT_MAJOR={C:"8B","C#":"3B",DB:"3B",D:"10B","D#":"5B",EB:"5B",E:"12B",F:"7B","F#":"2B",GB:"2B",G:"9B","G#":"4B",AB:"4B",A:"11B","A#":"6B",BB:"6B",B:"1B"};
+const CAMELOT_MINOR={C:"5A","C#":"12A",DB:"12A",D:"7A","D#":"2A",EB:"2A",E:"9A",F:"4A","F#":"11A",GB:"11A",G:"6A","G#":"1A",AB:"1A",A:"8A","A#":"3A",BB:"3A",B:"10A"};
+function normalizeCamelotOrKey(v){
+  const raw=String(v||"").trim();
+  if(!raw)return {camelot:null,key:null};
+  const cam=raw.toUpperCase().match(/^(\d{1,2})([AB])$/);
+  if(cam&&Number(cam[1])>=1&&Number(cam[1])<=12)return {camelot:`${Number(cam[1])}${cam[2]}`,key:null};
+
+  const m=raw.toUpperCase().replace(/♯/g,"#").replace(/♭/g,"B").replace(/\s+/g,"")
+    .match(/^([A-G])([#B]?)[-_]?(MAJOR|MINOR|MAJ|MIN|M)$/);
+  if(!m)return {camelot:null,key:raw};
+  const note=m[1]+(m[2]||"");
+  const minor=/^(MINOR|MIN|M)$/.test(m[3]) && m[3]!=="MAJ";
+  return {camelot:(minor?CAMELOT_MINOR:CAMELOT_MAJOR)[note]||null,key:raw};
+}
+function manualToMix(rec){
+  if(!rec)return null;
+  const k=normalizeCamelotOrKey(rec.keyInput||rec.camelot||rec.key||"");
+  return {
+    tempo:numOrNull(rec.bpm),
+    energy:clamp01OrNull(rec.energy),
+    danceability:clamp01OrNull(rec.danceability),
+    valence:clamp01OrNull(rec.valence),
+    acousticness:clamp01OrNull(rec.acousticness),
+    instrumentalness:clamp01OrNull(rec.instrumentalness),
+    speechiness:clamp01OrNull(rec.speechiness),
+    loudness:numOrNull(rec.loudness),
+    camelot:rec.camelot||k.camelot||null,
+    key:rec.key||k.key||null,
+    mood:rec.mood||null,
+    genre:rec.genre||null,
+    source:"manual",
+    fbId:null
+  };
+}
+function manualAudioGet(x){
+  return readManualAudio()[audioRecordKey(x)]||null;
+}
+function addMissingAudio(x){
+  const key=audioRecordKey(x),db=readMissingAudio();
+  db[key]={
+    key,
+    isrc:x?.spotify?.external_ids?.isrc||x?.isrc||"",
+    spotifyId:x?.spotify?.id||"",
+    artist:(x?.spotify?.artists||[]).map(a=>a.name).join(", ")||x?.artist||"",
+    track:x?.spotify?.name||x?.track||"",
+    ts:Date.now()
+  };
+  writeMissingAudio(db);
+  renderManualAudioUI();
+}
+function removeMissingAudio(key){
+  const db=readMissingAudio();delete db[key];writeMissingAudio(db)
+}
+function renderManualAudioUI(){
+  if(!manualTrackSelect||!manualStatus)return;
+  const missing=readMissingAudio(),manual=readManualAudio();
+  const current=manualTrackSelect.value;
+  const rows=Object.values(missing).sort((a,b)=>(b.ts||0)-(a.ts||0));
+
+  manualTrackSelect.innerHTML='<option value="">未取得曲を選択</option>'+
+    rows.map(r=>`<option value="${esc(r.key)}">${esc(r.track)} / ${esc(r.artist)}</option>`).join("");
+  if(rows.some(r=>r.key===current))manualTrackSelect.value=current;
+
+  const registered=Object.values(manual);
+  manualStatus.innerHTML=
+    `FreqBlog未取得: <b>${rows.length}曲</b> · 手動登録済み: <b>${registered.length}曲</b>`+
+    (registered.length?`<br>登録済み: ${registered.slice(-8).map(r=>esc(r.track)).join(" / ")}${registered.length>8?" …":""}`:"");
+}
+function loadManualForm(key){
+  const missing=readMissingAudio()[key],rec=readManualAudio()[key];
+  const set=(id,v)=>{const el=$(id);if(el)el.value=v??""};
+  set("#manualBpm",rec?.bpm);
+  set("#manualKey",rec?.keyInput||rec?.camelot||rec?.key);
+  set("#manualEnergy",rec?.energy);
+  set("#manualDance",rec?.danceability);
+  set("#manualAcoustic",rec?.acousticness);
+  set("#manualInstr",rec?.instrumentalness);
+  set("#manualMood",rec?.mood);
+  set("#manualGenre",rec?.genre);
+  if(missing)manualStatus.innerHTML+=`<br>編集中: <b>${esc(missing.track)}</b> / ${esc(missing.artist)}`;
+}
+function saveManualAudio(){
+  const key=manualTrackSelect.value;if(!key)return alert("曲を選んでください");
+  const missing=readMissingAudio()[key];if(!missing)return alert("未取得曲情報が見つかりません");
+  const bpm=numOrNull($("#manualBpm").value);
+  const keyInput=$("#manualKey").value.trim();
+  if(bpm===null&&!keyInput)return alert("最低でもBPMかKeyのどちらかを入力してください");
+  if(bpm!==null&&(bpm<30||bpm>300))return alert("BPMは30〜300で入力してください");
+
+  const parsed=normalizeCamelotOrKey(keyInput);
+  const rec={
+    ...missing,
+    bpm,
+    keyInput,
+    camelot:parsed.camelot,
+    key:parsed.key,
+    energy:clamp01OrNull($("#manualEnergy").value),
+    danceability:clamp01OrNull($("#manualDance").value),
+    acousticness:clamp01OrNull($("#manualAcoustic").value),
+    instrumentalness:clamp01OrNull($("#manualInstr").value),
+    mood:$("#manualMood").value||null,
+    genre:$("#manualGenre").value.trim()||null,
+    updatedAt:Date.now()
+  };
+  const db=readManualAudio();db[key]=rec;writeManualAudio(db);
+  removeMissingAudio(key);
+  log(`手動音響情報を保存: ${rec.track} / BPM ${rec.bpm??"?"} / ${rec.camelot||rec.key||"Key?"}`);
+  manualTrackSelect.value="";
+  ["#manualBpm","#manualKey","#manualEnergy","#manualDance","#manualAcoustic","#manualInstr","#manualGenre"].forEach(id=>$(id).value="");
+  $("#manualMood").value="";
+  renderManualAudioUI();
+}
+function deleteManualAudio(){
+  const key=manualTrackSelect.value;if(!key)return alert("曲を選んでください");
+  const db=readManualAudio();const rec=db[key];
+  delete db[key];writeManualAudio(db);
+  if(rec){
+    const miss=readMissingAudio();miss[key]={...rec,key,ts:Date.now()};writeMissingAudio(miss);
+    log(`手動音響情報を削除: ${rec.track}`);
+  }
+  renderManualAudioUI();loadManualForm(key);
+}
+
+let fullScanStop=false;
+let fullScanLines=[];
+
+function spotifyCacheUniqueTracks(){
+  const map=readSpotifyMap(),byId=new Map();
+  for(const t of Object.values(map)){
+    if(!t?.id&&!t?.uri)continue;
+    const id=t.id||String(t.uri||"").split(":").pop();
+    if(!id||byId.has(id))continue;
+    byId.set(id,t);
+  }
+  return [...byId.values()].sort((a,b)=>{
+    const aa=(a.artists||[]).map(x=>x.name).join(", ");
+    const bb=(b.artists||[]).map(x=>x.name).join(", ");
+    return `${aa} ${a.name}`.localeCompare(`${bb} ${b.name}`,"ja");
+  });
+}
+function scanItemFromSpotifyTrack(t){
+  return {
+    artist:(t.artists||[]).map(a=>a.name).join(", "),
+    track:t.name||"",
+    isrc:t.external_ids?.isrc||"",
+    spotify:t
+  };
+}
+function mixSummary(m){
+  if(!m)return "NO DATA";
+  const parts=[];
+  if(Number.isFinite(m.tempo))parts.push(`${m.tempo.toFixed(2)} BPM`);
+  if(m.camelot)parts.push(m.camelot);
+  else if(m.key)parts.push(m.key);
+  if(Number.isFinite(m.energy))parts.push(`E ${m.energy.toFixed(2)}`);
+  if(Number.isFinite(m.danceability))parts.push(`D ${m.danceability.toFixed(2)}`);
+  if(Number.isFinite(m.acousticness))parts.push(`Aco ${m.acousticness.toFixed(2)}`);
+  if(Number.isFinite(m.instrumentalness))parts.push(`Instr ${m.instrumentalness.toFixed(2)}`);
+  if(m.mood)parts.push(`Mood ${m.mood}`);
+  if(m.genre)parts.push(`Genre ${m.genre}`);
+  if(m.source)parts.push(`Source ${m.source}`);
+  return parts.length?parts.join(" | "):"PARTIAL DATA";
+}
+function appendScanLine(line){
+  fullScanLines.push(line);
+  log(line);
+}
+async function scanAllAudio(){
+  const btn=$("#scanAllBtn"),stop=$("#stopScanBtn"),status=$("#scanStatus");
+  const tracks=spotifyCacheUniqueTracks();
+  if(!tracks.length){
+    alert("Spotify対応表キャッシュが空です。先に「既存AI DJプレイリストからSpotify対応表を作る」を実行してください。");
+    return;
+  }
+
+  fullScanStop=false;fullScanLines=[];
+  btn.disabled=true;stop.disabled=false;
+  const started=new Date();
+  appendScanLine(`===== FULL AUDIO SCAN START / ${tracks.length} tracks =====`);
+
+  let ok=0,manual=0,missing=0,partial=0;
+  for(let i=0;i<tracks.length;i++){
+    if(fullScanStop){
+      appendScanLine(`===== SCAN STOPPED ${i}/${tracks.length} =====`);
+      break;
+    }
+
+    const t=tracks[i],x=scanItemFromSpotifyTrack(t);
+    status.textContent=`スキャン中 ${i+1}/${tracks.length}: ${t.name}`;
+
+    // Determine whether this call should hit network or use cache/manual.
+    const beforeManual=!!manualAudioGet(x);
+    const isrc=x.spotify?.external_ids?.isrc||x.isrc||"";
+    const ck="lookup:"+(isrc||x.spotify?.id||keyOf(x.artist,x.track));
+    const beforeCache=!!cacheGet(ck,45);
+
+    try{
+      await fbLookupTrack(x);
+      if(x.mix){
+        const src=x.mix.source==="manual"?"MANUAL":beforeCache?"CACHE":"FREQBLOG";
+        if(src==="MANUAL")manual++;
+        else ok++;
+        if(!Number.isFinite(x.mix.tempo)||!(x.mix.camelot||x.mix.key))partial++;
+        appendScanLine(
+          `[${String(i+1).padStart(3,"0")}/${tracks.length}] [${src}] `+
+          `${x.track} / ${x.artist} | ${mixSummary(x.mix)}`
+        );
+      }else{
+        missing++;
+        appendScanLine(
+          `[${String(i+1).padStart(3,"0")}/${tracks.length}] [MISSING] `+
+          `${x.track} / ${x.artist}`+
+          `${isrc?` | ISRC ${isrc}`:""}`
+        );
+      }
+    }catch(e){
+      missing++;
+      addMissingAudio(x);
+      appendScanLine(
+        `[${String(i+1).padStart(3,"0")}/${tracks.length}] [ERROR] `+
+        `${x.track} / ${x.artist} | ${e.message}`
+      );
+    }
+
+    // Only pace calls that were not already satisfied locally.
+    if(!beforeManual&&!beforeCache)await sleep(350);
+  }
+
+  const done=ok+manual+missing;
+  const summary=`FULL AUDIO SCAN: ${done}/${tracks.length} | usable ${ok+manual} | manual ${manual} | missing ${missing} | partial ${partial}`;
+  appendScanLine(`===== ${summary} =====`);
+  status.textContent=summary;
+  renderManualAudioUI();
+
+  btn.disabled=false;stop.disabled=true;
+}
+function copyScanLog(){
+  const text=fullScanLines.length?fullScanLines.join("\n"):"まだスキャン結果がありません。";
+  navigator.clipboard?.writeText(text).then(()=>{
+    $("#scanStatus").textContent+=" / ログをコピーしました";
+  }).catch(()=>{
+    const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);
+    ta.select();document.execCommand("copy");ta.remove();
+    $("#scanStatus").textContent+=" / ログをコピーしました";
+  });
+}
+
 async function fbLookupTrack(x){
+  const manual=manualAudioGet(x);
+  if(manual){
+    x.manualAudio=manual;
+    x.mix=manualToMix(manual);
+    log(`手動音響情報を使用: ${x.spotify?.name||x.track} / BPM ${x.mix?.tempo??"?"} / ${x.mix?.camelot||x.mix?.key||"Key?"}`);
+    return x;
+  }
   const isrc=x.spotify?.external_ids?.isrc||x.isrc||"";
   const ck="lookup:"+(isrc||x.spotify?.id||keyOf(x.artist,x.track));
   const cached=cacheGet(ck,45);if(cached){x.fb=cached;x.mix=fbToMix(cached);return x}
@@ -388,6 +745,7 @@ async function fbLookupTrack(x){
     x.fb=hit.data;x.mix=fbToMix(hit.data);cacheSet(ck,hit.data);
   }else{
     log(`FreqBlog未取得: ${x.spotify?.name||x.track} (HTTP ${hit?.status||"?"})`);
+    addMissingAudio(x);
   }
   return x;
 }
@@ -450,7 +808,7 @@ function cachedUnknownCandidate(c){
   const hit=spotifyMapGet(c);
   return hit?{...c,spotify:hit,matchScore:1,fromSpotifyCache:true}:null;
 }
-const PENDING_SET_KEY="ai_dj_pending_set_v21";
+const PENDING_SET_KEY="ai_dj_pending_set_v20";
 function savePendingSet(name,seq,summary){
   const payload={
     ts:Date.now(),name,summary,
@@ -478,7 +836,7 @@ function renderPendingSet(p){
     if(i>0){
       const m=pairMetrics(seq[i-1],x),score=m.score;
       mixScores.push(score);
-      mixLine=` · Mix ${score}/100 · Sonic ${Math.round(clamp(m.sonic,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
+      mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
     }
     const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
     const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -661,127 +1019,107 @@ similarities for very different tracks. Instead, v20 builds per-field statistics
 current DJ set and compares only descriptor-style fields after standardisation.
 */
 let EMBED_STATS=null;
+const DIRECT_FEATURE_RE=/(bpm|tempo|key|mode|energy|loud|dance|valence|acoustic|instrument|speech|liveness)/i;
 
-function getEmbeddingVector(x){
-  const e=x?.embedding;
-  if(!e)return null;
-  if(Array.isArray(e.embedding))return {
-    values:e.embedding,
-    mask:Array.isArray(e.embedding_mask)?e.embedding_mask:e.embedding.map(()=>1),
-    fields:Array.isArray(e.fields)?e.fields:e.embedding.map((_,i)=>`f${i}`)
-  };
-  // Be tolerant of wrappers if FreqBlog changes/varies the response envelope.
-  if(e.data&&Array.isArray(e.data.embedding))return {
-    values:e.data.embedding,
-    mask:Array.isArray(e.data.embedding_mask)?e.data.embedding_mask:e.data.embedding.map(()=>1),
-    fields:Array.isArray(e.data.fields)?e.data.fields:e.data.embedding.map((_,i)=>`f${i}`)
-  };
-  return null;
-}
 function prepareEmbeddingStats(items){
-  const rows=items.map(x=>({x,v:getEmbeddingVector(x)})).filter(r=>r.v?.values?.length);
+  const rows=items.filter(x=>x?.embedding?.embedding&&x.embedding?.fields);
   if(!rows.length){EMBED_STATS=null;return}
-
-  const dims=Math.max(...rows.map(r=>r.v.values.length));
+  const fields=rows[0].embedding.fields||[];
   const stats={};
-  const fields=Array.from({length:dims},(_,i)=>rows.find(r=>r.v.fields?.[i])?.v.fields?.[i]||`f${i}`);
-
-  for(let i=0;i<dims;i++){
+  for(let i=0;i<fields.length;i++){
+    const name=String(fields[i]||`f${i}`);
+    if(DIRECT_FEATURE_RE.test(name))continue;
     const vals=[];
-    for(const r of rows){
-      const val=Number(r.v.values[i]);
-      if(r.v.mask?.[i] && Number.isFinite(val))vals.push(val);
+    for(const x of rows){
+      const e=x.embedding,mask=e.embedding_mask||e.embedding.map(()=>1),v=Number(e.embedding?.[i]);
+      if(mask[i]&&Number.isFinite(v))vals.push(v);
     }
-    if(vals.length<Math.max(5,Math.ceil(rows.length*.25)))continue;
+    if(vals.length<Math.max(6,Math.ceil(rows.length*.35)))continue;
     const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
     const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length;
     const sd=Math.sqrt(variance);
-    if(sd>1e-8)stats[i]={name:String(fields[i]||`f${i}`),mean,sd};
+    if(sd>1e-7)stats[i]={name,mean,sd};
   }
-  EMBED_STATS={fields,stats,rowCount:rows.length};
+  EMBED_STATS={fields,stats};
 }
-function sonicSimilarity(a,b){
-  const A=getEmbeddingVector(a),B=getEmbeddingVector(b);
-  if(!A||!B||!EMBED_STATS)return null;
+function descriptorSimilarity(a,b){
+  const A=a?.embedding,B=b?.embedding;
+  if(!A?.embedding||!B?.embedding||!EMBED_STATS)return null;
+  const am=A.embedding_mask||A.embedding.map(()=>1),bm=B.embedding_mask||B.embedding.map(()=>1);
   let sum=0,n=0;
   for(const [idxS,st] of Object.entries(EMBED_STATS.stats)){
-    const i=Number(idxS),av=Number(A.values[i]),bv=Number(B.values[i]);
-    if(!A.mask?.[i]||!B.mask?.[i]||!Number.isFinite(av)||!Number.isFinite(bv))continue;
-    const d=Math.min(4,Math.abs((av-st.mean)/st.sd-(bv-st.mean)/st.sd));
+    const i=Number(idxS),av=Number(A.embedding[i]),bv=Number(B.embedding[i]);
+    if(!am[i]||!bm[i]||!Number.isFinite(av)||!Number.isFinite(bv))continue;
+    const za=(av-st.mean)/st.sd,zb=(bv-st.mean)/st.sd;
+    const d=Math.min(4,Math.abs(za-zb));
     sum+=d*d;n++;
   }
-  if(n<3)return null;
+  if(n<2)return null;
   const rms=Math.sqrt(sum/n);
-  // Local-set z-score approximation of FreqBlog's catalogue-normalised 18-feature similarity.
-  return Math.exp(-0.72*rms);
+  // 0 distance -> 100%; ~1 standard deviation RMS -> ~45%; ~2 -> ~20%.
+  return Math.exp(-0.8*rms);
 }
-function fallbackSonicSimilarity(a,b){
+function fallbackTextureSimilarity(a,b){
   const costs=[
     scalarCost(a,b,"acousticness",1.6),
     scalarCost(a,b,"instrumentalness",1.35),
-    scalarCost(a,b,"danceability",1.25),
-    scalarCost(a,b,"valence",1.0),
-    scalarCost(a,b,"energy",1.2)
+    scalarCost(a,b,"danceability",1.3),
+    scalarCost(a,b,"valence",1.0)
   ];
   return 1-clamp(costs.reduce((x,y)=>x+y,0)/costs.length);
 }
-function effectiveSonicSimilarity(a,b){
-  const s=sonicSimilarity(a,b);
-  return s===null?fallbackSonicSimilarity(a,b):s;
+function textureSimilarity(a,b){
+  const d=descriptorSimilarity(a,b);
+  return d===null?fallbackTextureSimilarity(a,b):d;
 }
 function pairMetrics(a,b){
-  const sonic=effectiveSonicSimilarity(a,b);
-  const sc=1-clamp(sonic,0,1);
+  const texture=textureSimilarity(a,b);
+  const tc=1-clamp(texture,0,1);
   const bd=octaveBpmDelta(a,b),bc=bpmCost(a,b),kc=keyCost(a,b);
   const ec=scalarCost(a,b,"energy",1.55);
   const dc=scalarCost(a,b,"danceability",1.35);
   const spectral=(scalarCost(a,b,"acousticness",1.6)+scalarCost(a,b,"instrumentalness",1.35))/2;
   const gm=genreMoodCost(a,b);
 
-  // Sonic score already contains some BPM/key/energy information, so direct DJ constraints remain dominant.
-  let cost=.20*sc+.29*bc+.20*kc+.13*ec+.05*dc+.08*spectral+.05*gm;
+  // Base weighting. BPM and harmonic compatibility are deliberately stronger than v19.
+  let cost=.24*tc+.27*bc+.19*kc+.11*ec+.05*dc+.09*spectral+.05*gm;
 
+  // Hard guards: these represent transitions a human DJ would usually avoid as a long blend.
   let hardPenalty=0;
   if(bd!==null){
-    if(bd>25)hardPenalty+=.44;
-    else if(bd>18)hardPenalty+=.29;
-    else if(bd>14)hardPenalty+=.13;
+    if(bd>25)hardPenalty+=.42;
+    else if(bd>18)hardPenalty+=.27;
+    else if(bd>14)hardPenalty+=.12;
   }
-  if(kc>=1.0)hardPenalty+=.17;
+  if(kc>=1.0)hardPenalty+=.16;
   else if(kc>=.58)hardPenalty+=.07;
-
-  const ea=a?.mix?.energy,eb=b?.mix?.energy;
-  const energyDelta=(Number.isFinite(ea)&&Number.isFinite(eb))?Math.abs(ea-eb):null;
-  if(energyDelta!==null){
-    if(energyDelta>.70)hardPenalty+=.24;
-    else if(energyDelta>.50)hardPenalty+=.10;
-  }
-
-  if(sonic<.20)hardPenalty+=.16;
-  else if(sonic<.32)hardPenalty+=.07;
+  if(texture<.22)hardPenalty+=.16;
+  else if(texture<.35)hardPenalty+=.07;
 
   cost=clamp(cost+hardPenalty,0,1.35);
-  let score=Math.round((1-clamp(cost,0,1))*100);
 
-  if(bd!==null&&bd>25)score=Math.min(score,32);
-  else if(bd!==null&&bd>18)score=Math.min(score,50);
-  else if(bd!==null&&bd>14)score=Math.min(score,66);
-  if(kc>=1.0)score=Math.min(score,60);
-  if(energyDelta!==null&&energyDelta>.70)score=Math.min(score,52);
+  // Human-readable score. A giant BPM jump can never masquerade as a high score.
+  let score=Math.round((1-clamp(cost,0,1))*100);
+  if(bd!==null&&bd>25)score=Math.min(score,35);
+  else if(bd!==null&&bd>18)score=Math.min(score,52);
+  else if(bd!==null&&bd>14)score=Math.min(score,68);
+  if(kc>=1.0)score=Math.min(score,62);
 
   return {
-    cost,score,sonic,
-    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,energyDelta,
+    cost,score,texture,
+    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,
     keyLabel:keyLabel(a,b),hardPenalty
   };
 }
 function transitionLogLine(a,b,index){
   const m=pairMetrics(a,b);
   const bpm=m.bpmDelta===null?"?":m.bpmDelta.toFixed(1);
-  const sonic=Math.round(clamp(m.sonic,0,1)*100);
-  const ed=m.energyDelta===null?"?":m.energyDelta.toFixed(2);
+  const tex=Math.round(clamp(m.texture,0,1)*100);
+  const ea=Number.isFinite(a?.mix?.energy)?a.mix.energy:null;
+  const eb=Number.isFinite(b?.mix?.energy)?b.mix.energy:null;
+  const ed=(ea!==null&&eb!==null)?Math.abs(ea-eb).toFixed(2):"?";
   const guard=m.hardPenalty>0?` · penalty +${m.hardPenalty.toFixed(2)}`:"";
-  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Sonic ${sonic}% | ΔEnergy ${ed}${guard}`;
+  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Texture ${tex}% | ΔEnergy ${ed}${guard}`;
 }
 function routeCost(seq){let c=0;for(let i=1;i<seq.length;i++)c+=pairMetrics(seq[i-1],seq[i]).cost;return c}
 function chooseStart(pool){
@@ -807,8 +1145,7 @@ function greedySequence(items){
     const safe=evaluated.filter(z=>
       (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
       z.m.keyCost<1.0 &&
-      z.m.sonic>=.20 &&
-      (z.m.energyDelta===null||z.m.energyDelta<=.70)
+      z.m.texture>=.22
     );
     const pool=safe.length?safe:evaluated;
 
@@ -836,7 +1173,7 @@ function severeTransitionCount(seq){
   let n=0;
   for(let i=1;i<seq.length;i++){
     const m=pairMetrics(seq[i-1],seq[i]);
-    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.sonic<.20||(m.energyDelta!==null&&m.energyDelta>.70))n++;
+    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.texture<.22)n++;
   }
   return n;
 }
@@ -903,58 +1240,6 @@ async function writePlaylist(name,seq){
   return p;
 }
 
-
-function connectivityScore(x,pool){
-  const vals=pool.filter(y=>y!==x).map(y=>pairMetrics(x,y).cost).sort((a,b)=>a-b);
-  if(!vals.length)return 9;
-  const k=Math.min(8,vals.length);
-  const near=vals.slice(0,k).reduce((a,b)=>a+b,0)/k;
-  const weightBonus=Math.min(.08,Math.max(0,Number(x.weight||1)-1)*.012);
-  return near-weightBonus;
-}
-function chooseKnownSubset(pool,count,required=[]){
-  if(pool.length<=count)return pool.slice(0,count);
-
-  // Required discovery tracks are not here; this scores known candidates on how many clean exits they have.
-  const context=[...pool,...required];
-  const ranked=pool.map(x=>({x,s:connectivityScore(x,context)})).sort((a,b)=>a.s-b.s);
-
-  // Keep a wider top band, then greedily build a chain-length subset so a "dead-end" song isn't forced in.
-  const band=ranked.slice(0,Math.min(ranked.length,Math.max(count+10,Math.ceil(count*1.45)))).map(z=>z.x);
-  const chosen=[];
-  let cur=chooseStart(band);
-  if(cur){chosen.push(cur)}
-  let remaining=band.filter(x=>x!==cur);
-
-  while(chosen.length<count&&remaining.length){
-    let allowed=remaining.filter(x=>!wouldMakeFour(chosen,x));
-    if(!allowed.length)allowed=remaining;
-
-    const evaluated=allowed.map(x=>({x,m:pairMetrics(chosen.at(-1),x)}));
-    const safe=evaluated.filter(z=>
-      (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
-      z.m.keyCost<1.0 &&
-      z.m.sonic>=.20 &&
-      (z.m.energyDelta===null||z.m.energyDelta<=.70)
-    );
-    const pickPool=safe.length?safe:evaluated;
-    pickPool.sort((a,b)=>a.m.cost-b.m.cost || connectivityScore(a.x,band)-connectivityScore(b.x,band));
-    const next=pickPool[0]?.x;if(!next)break;
-    chosen.push(next);remaining=remaining.filter(x=>x!==next);
-  }
-
-  // If a strict-safe chain could not reach count, fill from globally connected tracks.
-  if(chosen.length<count){
-    for(const z of ranked){
-      if(chosen.length>=count)break;
-      if(chosen.includes(z.x))continue;
-      if(wouldMakeFour(chosen,z.x))continue;
-      chosen.push(z.x);
-    }
-  }
-  return chosen.slice(0,count);
-}
-
 /* ---------- main ---------- */
 async function generate(){
   generateBtn.disabled=true;playlistLink.style.display="none";tracksEl.innerHTML="";summaryEl.textContent="生成中…";
@@ -962,93 +1247,57 @@ async function generate(){
     proxyConfig();
     const lanes=selectedLanes();if(!lanes.size)throw new Error("既知曲レーンを1つ以上選んでください");
     const total=Math.min(50,Math.max(10,Number($("#trackCount").value)||30));
-    const ratio=Number($("#knownRatio").value)/100,knownTarget=Math.round(total*ratio),unknownTarget=total-knownTarget;
+    const ratio=Number($("#knownRatio").value)/100,knownN=Math.round(total*ratio),unknownN=total-knownN;
+    const globalUris=new Set();
 
     logEl.textContent="";
-    log(`ローカル生成開始 ${total}曲 / 目標 既知${knownTarget} / 未知${unknownTarget}`);
+    log(`ローカル生成開始 ${total}曲 / 既知${knownN} / 未知${unknownN}`);
     log(`Spotify対応表キャッシュ: ${spotifyMapCount()}件`);
 
-    const allCached=cachedKnownPool(lanes);
-    if(allCached.length<Math.min(total,knownTarget)){
-      throw new Error(`選択レーンのSpotify対応済み既知曲が${allCached.length}曲しかありません`);
+    // Zero Spotify Search calls for known tracks.
+    let known=pickCachedKnown(knownN,lanes);
+    if(known.length<knownN){
+      throw new Error(`Spotify対応表に既知曲が${known.length}/${knownN}しかありません。「既存AI DJプレイリストからSpotify対応表を作る」をquotaが使える時に1回実行してください。`);
+    }
+    known.forEach(x=>globalUris.add(x.spotify.uri));
+    log(`既知 ${known.length}曲をSpotify API検索なしで確保`);
+
+    progressEl.textContent="既知曲のFreqBlog音響情報を取得中…";
+    await enrichFreqBlog(known,"既知");
+    const withAudio=known.filter(x=>x.mix?.tempo);
+    if(withAudio.length<Math.max(10,known.length-4)){
+      log(`音響情報不足 ${withAudio.length}/${known.length}。取得できた曲を優先します`);
+      known=[...withAudio,...known.filter(x=>!x.mix?.tempo)].slice(0,knownN);
     }
 
-    // Analyze a wider crate than the final set. This is the key v21 change.
-    const candidateN=Math.min(allCached.length,Math.max(total+14,Math.ceil(total*1.65)));
-    let knownCandidates=pickCachedKnown(candidateN,lanes);
-    log(`既知候補を ${knownCandidates.length}曲 確保（最終セットより多めに解析）`);
-
-    progressEl.textContent="既知候補のFreqBlog音響情報を取得中…";
-    await enrichFreqBlog(knownCandidates,"既知候補");
-
-    // Prefer tracks with usable DJ metadata; don't force 404/no-feature tracks into the set.
-    let goodKnown=knownCandidates.filter(x=>x.mix?.tempo&&x.mix?.camelot);
-    let partialKnown=knownCandidates.filter(x=>x.mix?.tempo&&!x.mix?.camelot);
-    let badKnown=knownCandidates.filter(x=>!x.mix?.tempo);
-
-    if(goodKnown.length<knownTarget){
-      goodKnown=[...goodKnown,...partialKnown];
-    }
-    if(goodKnown.length<knownTarget){
-      log(`警告: 十分な音響情報がある既知候補 ${goodKnown.length}/${knownTarget}`);
-      goodKnown=[...goodKnown,...badKnown];
-    }
-    log(`既知候補 quality: full ${knownCandidates.filter(x=>x.mix?.tempo&&x.mix?.camelot).length} / partial ${partialKnown.length} / none ${badKnown.length}`);
-
-    // Embeddings for the wider crate so Sonic z-scores are meaningful.
-    progressEl.textContent="候補のSonic embeddingを取得中…";
-    await enrichEmbeddings(goodKnown);
-    prepareEmbeddingStats(goodKnown);
-    const dims=EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0;
-    log(`Sonic比較: embedding ${EMBED_STATS?.rowCount||0}曲 / 有効 ${dims}次元`);
-    if(EMBED_STATS?.fields?.length)log(`Embedding fields: ${EMBED_STATS.fields.join(", ")}`);
-
-    // Use a well-connected subset as discovery seeds.
-    let seedKnown=chooseKnownSubset(goodKnown,Math.min(knownTarget,goodKnown.length));
-    const seedUris=new Set(seedKnown.map(x=>x.spotify.uri));
-
-    let unknown=[];
-    if(unknownTarget>0){
-      progressEl.textContent="未知曲を音響類似で探索中…";
-      unknown=await discoverUnknown(seedKnown,unknownTarget,seedUris);
-      await enrichFreqBlog(unknown.filter(x=>!x.mix),"未知候補");
-      await enrichEmbeddings(unknown);
+    progressEl.textContent="未知曲を音そのものの近さから探索中…";
+    const unknown=await discoverUnknown(known,unknownN,globalUris);
+    if(unknown.length<unknownN){
+      log(`未知曲は ${unknown.length}/${unknownN}。Spotify quotaを使い切っている間は、キャッシュ/Spotify-ID直結で確保できた分だけ使用します。`);
     }
 
-    // Recompute Sonic stats with discovery tracks too.
-    prepareEmbeddingStats([...goodKnown,...unknown]);
-
-    // If discovery is short (e.g. Spotify quota), top up with known tracks instead of returning 24/30.
-    const finalKnownCount=total-unknown.length;
-    let finalKnown=chooseKnownSubset(goodKnown,finalKnownCount,unknown);
-
-    if(finalKnown.length<finalKnownCount){
-      const extras=allCached.filter(x=>!finalKnown.some(y=>y.spotify.uri===x.spotify.uri));
-      for(const x of extras){
-        if(finalKnown.length>=finalKnownCount)break;
-        finalKnown.push(x);
-      }
-    }
-
-    let all=[...finalKnown,...unknown].slice(0,total);
+    let all=[...known,...unknown];
+    await enrichFreqBlog(all.filter(x=>!x.mix),"最終候補");
+    progressEl.textContent="音色embeddingを取得中…";
+    await enrichEmbeddings(all);
     prepareEmbeddingStats(all);
+    log(`Texture比較用descriptor: ${EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0}次元`);
 
-    progressEl.textContent="Sonic・BPM・Key・Energyで曲順を最適化中…";
+    progressEl.textContent="音色・BPM・Key・Energyで曲順を最適化中…";
     let seq=improve2Opt(greedySequence(all));
-
     log(`曲順最適化完了: severe transitions ${severeTransitionCount(seq)}/${Math.max(0,seq.length-1)}`);
     log("---- TRANSITIONS ----");
     for(let i=1;i<seq.length;i++)log(transitionLogLine(seq[i-1],seq[i],i));
     log("---------------------");
-
     const name=$("#setName").value.trim()||"AI DJ NOW";
+
     let mixScores=[];
     tracksEl.innerHTML=seq.map((x,i)=>{
       let mixLine="";
       if(i>0){
         const m=pairMetrics(seq[i-1],x),score=m.score;
         mixScores.push(score);
-        mixLine=` · Mix ${score}/100 · Sonic ${Math.round(clamp(m.sonic,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
+        mixLine=` · Mix ${score}/100 · Texture ${Math.round(clamp(m.texture,0,1)*100)}%${m.bpmDelta!==null?` · ΔBPM ${m.bpmDelta.toFixed(1)}`:""} · ${m.keyLabel}`;
       }
       const bpm=Number.isFinite(x.mix?.tempo)?x.mix.tempo.toFixed(1):"—";
       const key=x.mix?.camelot||"—",energy=Number.isFinite(x.mix?.energy)?x.mix.energy.toFixed(2):"—";
@@ -1059,9 +1308,9 @@ async function generate(){
     }).join("");
 
     const avg=mixScores.length?Math.round(mixScores.reduce((a,b)=>a+b,0)/mixScores.length):0;
-    const summary=`${seq.length}曲 / 既知${finalKnown.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
+    const summary=`${seq.length}曲 / 既知${known.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
     savePendingSet(name,seq,summary);
-    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v21は候補を多めに解析し、繋ぎにくい曲を最終セットから外します。未知不足時は既知で補充します。</span>`;
+    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v20は大きなBPM差・遠いKey・Texture差を強く減点。各遷移の詳細はログに出ています。セットは端末内に保存済みです。</span>`;
     progressEl.textContent="ローカル生成完了";
     log(`ローカル生成完了: ${summary}`);
   }catch(e){
@@ -1073,6 +1322,8 @@ async function generate(){
     applySpotifyBtn.disabled=!token()||!loadPendingSet();
   }
 }
+
+
 async function applyPendingToSpotify(){
   const p=loadPendingSet();if(!p)return alert("先にローカル生成してください");
   applySpotifyBtn.disabled=true;
@@ -1101,11 +1352,23 @@ $("#applySpotifyBtn").addEventListener("click",applyPendingToSpotify);
 $("#warmSpotifyBtn").addEventListener("click",warmSpotifyCacheFromOwnAIPlaylists);
 $("#knownRatio").addEventListener("input",e=>$("#ratioText").textContent=e.target.value+"%");
 $("#clearCacheBtn").addEventListener("click",()=>{localStorage.removeItem(CACHE_KEY);log("FreqBlog音響キャッシュを消去しました")});
+$("#scanAllBtn").addEventListener("click",scanAllAudio);
+$("#stopScanBtn").addEventListener("click",()=>{fullScanStop=true;$("#stopScanBtn").disabled=true;$("#scanStatus").textContent+=" / 停止要求中…"});
+$("#copyScanLogBtn").addEventListener("click",copyScanLog);
+$("#manualTrackSelect").addEventListener("change",e=>loadManualForm(e.target.value));
+$("#saveManualBtn").addEventListener("click",saveManualAudio);
+$("#deleteManualBtn").addEventListener("click",deleteManualAudio);
+$("#clearMissingBtn").addEventListener("click",()=>{
+  localStorage.removeItem(MISSING_AUDIO_KEY);
+  renderManualAudioUI();
+  log("未取得リストだけ消去しました（手動登録は保持）");
+});
+
 clientIdEl.addEventListener("change",()=>localStorage.setItem("spotify_client_id",clientIdEl.value.trim()));
 proxyUrlEl.addEventListener("change",()=>localStorage.setItem("ai_dj_proxy_url",proxyUrlEl.value.trim().replace(/\/$/,"")));
 proxyTokenEl.addEventListener("change",()=>localStorage.setItem("ai_dj_proxy_token",proxyTokenEl.value.trim()));
 
-(async()=>{try{await exchangeCode()}catch(e){log("OAuth失敗: "+e.message)}const p=loadPendingSet();if(p)renderPendingSet(p);await refreshStatus()})();
+(async()=>{renderManualAudioUI();try{await exchangeCode()}catch(e){log("OAuth失敗: "+e.message)}const p=loadPendingSet();if(p)renderPendingSet(p);await refreshStatus()})();
 </script>
 </body>
 </html>
