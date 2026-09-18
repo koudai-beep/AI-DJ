@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v21.2 Crate Selector + Full Scan</title>
+<title>AI DJ v21.3 KNOWN Mother</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v21.2 Crate Selector + Full Scan</h1>
-<p class="sub">v21 Crate SelectorのDJロジックはそのまま。FreqBlog未取得曲の手動登録と、Spotify対応表キャッシュ全曲の音響スキャンを追加しています。</p>
+<h1>AI DJ v21.3 KNOWN Mother</h1>
+<p class="sub">v21 Crate SelectorのDJロジックはそのまま。Spotifyの「AI DJ KNOWN」を既知曲の母艦にして、追加・削除・優先度を同期できます。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -71,7 +71,59 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </section>
 
 <section class="card">
-<span class="badge">3. 音響情報の登録 / 全曲スキャン</span>
+<span class="badge">3. 既知曲の母艦 — Spotify</span>
+<p class="small">
+Spotifyに <b>AI DJ KNOWN</b> を1つ作り、以後はそこを既知曲の正本として使います。
+Spotifyで曲を追加・削除したあと、この画面で「母艦から同期」を押せばAI DJへ反映されます。
+新規追加曲の初期優先度は5、レーンはElectronicです。
+</p>
+
+<div class="row" style="margin-top:12px">
+<div>
+<label>母艦プレイリスト名</label>
+<input id="knownMotherName" type="text" value="AI DJ KNOWN">
+</div>
+<div>
+<label>新規曲の初期優先度</label>
+<input id="knownDefaultWeight" type="number" min="1" max="10" step="1" value="5">
+</div>
+</div>
+
+<button id="initKnownMotherBtn" class="primary" disabled>現在の既知曲で母艦を初期化</button>
+<button id="syncKnownMotherBtn" class="primary" disabled>母艦から既知曲を同期</button>
+<a id="knownMotherLink" class="btn secondary" target="_blank" rel="noopener" style="display:none">Spotifyで母艦を開く</a>
+<p id="knownMotherStatus" class="small">母艦はまだ有効化されていません。</p>
+
+<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+<label>曲ごとの優先度 / レーン</label>
+<p class="small">優先度1〜10。値が大きいほど候補に選ばれやすくなります。追加直後は5です。</p>
+<div class="row">
+<div>
+<label>既知曲</label>
+<select id="knownMetaTrack"><option value="">曲を選択</option></select>
+</div>
+<div>
+<label>優先度 <span id="knownWeightText">5</span></label>
+<input id="knownMetaWeight" type="range" min="1" max="10" step="1" value="5">
+</div>
+<div>
+<label>レーン</label>
+<select id="knownMetaLane">
+<option value="Speed Garage">Speed Garage</option>
+<option value="Future / Kawaii">Future / Kawaii</option>
+<option value="Vocal Synth">Vocal Synth</option>
+<option value="Electronic">Electronic</option>
+<option value="Game / Electronic">Game / Electronic</option>
+<option value="Chill / Night">Chill / Night</option>
+</select>
+</div>
+</div>
+<button id="saveKnownMetaBtn" class="secondary">優先度 / レーンを保存</button>
+</div>
+</section>
+
+<section class="card">
+<span class="badge">4. 音響情報の登録 / 全曲スキャン</span>
 <p class="small">
 FreqBlogで取得できなかった曲はここに自動追加されます。手動登録した値はFreqBlogより優先します。
 <b>BPM + Camelot Key</b> があるとDJ判定に特に有効です。
@@ -144,7 +196,7 @@ Spotify APIは使わず、端末に保存済みのSpotify対応表を重複除�
 </section>
 
 <section class="card">
-<span class="badge">4. 結果</span>
+<span class="badge">5. 結果</span>
 <div id="summary" class="small">まだ生成していません。</div>
 <div id="tracks"></div>
 <a id="playlistLink" class="btn primary" target="_blank" rel="noopener" style="display:none">Spotifyで開く</a>
@@ -252,12 +304,12 @@ async function exchangeCode(){
 async function refreshStatus(){
   if(!token()){
     statusEl.textContent="Spotify: 未接続";
-    generateBtn.disabled=true;warmSpotifyBtn.disabled=true;applySpotifyBtn.disabled=true;
+    generateBtn.disabled=true;warmSpotifyBtn.disabled=true;applySpotifyBtn.disabled=true;$("#initKnownMotherBtn").disabled=true;$("#syncKnownMotherBtn").disabled=true;
     return;
   }
   statusEl.textContent="Spotify: 接続済み（API呼び出し節約モード）";
   statusEl.className="small ok";
-  generateBtn.disabled=false;warmSpotifyBtn.disabled=false;
+  generateBtn.disabled=false;warmSpotifyBtn.disabled=false;$("#initKnownMotherBtn").disabled=false;$("#syncKnownMotherBtn").disabled=false;
   applySpotifyBtn.disabled=!loadPendingSet();
 }
 
@@ -287,6 +339,203 @@ function spotifyMapPut(x,t){
   writeSpotifyMap(c);
 }
 function spotifyMapCount(){return Object.keys(readSpotifyMap()).length}
+
+const KNOWN_MOTHER_DB_KEY="ai_dj_known_mother_v213";
+const KNOWN_MOTHER_ACTIVE_KEY="ai_dj_known_mother_active_v213";
+const KNOWN_MOTHER_PLAYLIST_ID_KEY="ai_dj_known_mother_playlist_id_v213";
+
+function readKnownMother(){try{return JSON.parse(localStorage.getItem(KNOWN_MOTHER_DB_KEY)||"{}")}catch{return {}}}
+function writeKnownMother(v){localStorage.setItem(KNOWN_MOTHER_DB_KEY,JSON.stringify(v))}
+function knownMotherActive(){return localStorage.getItem(KNOWN_MOTHER_ACTIVE_KEY)==="1"}
+function setKnownMotherActive(v){v?localStorage.setItem(KNOWN_MOTHER_ACTIVE_KEY,"1"):localStorage.removeItem(KNOWN_MOTHER_ACTIVE_KEY)}
+function motherEntries(){return Object.values(readKnownMother())}
+function motherPlaylistId(){return localStorage.getItem(KNOWN_MOTHER_PLAYLIST_ID_KEY)||""}
+function setMotherPlaylistId(id){if(id)localStorage.setItem(KNOWN_MOTHER_PLAYLIST_ID_KEY,id)}
+
+function currentKnownRows(){
+  if(knownMotherActive()){
+    return motherEntries().map(e=>({
+      artist:e.artist,track:e.track,weight:Number(e.weight)||5,lane:e.lane||"Electronic",spotify:e.spotify
+    }));
+  }
+  return KNOWN;
+}
+function currentKnownHas(artist,track){
+  const k=keyOf(artist,track),t=titleKey(track);
+  return currentKnownRows().some(x=>keyOf(x.artist,x.track)===k||titleKey(x.track)===t);
+}
+function legacyKnownMapped(){
+  const byId=new Map();
+  for(const x of KNOWN){
+    const t=spotifyMapGet(x);if(!t?.id)continue;
+    const prev=byId.get(t.id);
+    const candidate={
+      id:t.id,
+      artist:(t.artists||[]).map(a=>a.name).join(", ")||x.artist,
+      track:t.name||x.track,
+      weight:Number(x.weight)||5,
+      lane:x.lane||"Electronic",
+      spotify:slimTrack(t),
+      source:"legacy"
+    };
+    if(!prev||candidate.weight>prev.weight)byId.set(t.id,candidate);
+  }
+  return [...byId.values()];
+}
+function renderKnownMotherUI(){
+  const status=$("#knownMotherStatus"),sel=$("#knownMetaTrack"),link=$("#knownMotherLink");
+  if(!status||!sel)return;
+  const rows=motherEntries().sort((a,b)=>(b.weight||0)-(a.weight||0)||String(a.track).localeCompare(String(b.track),"ja"));
+  const active=knownMotherActive();
+
+  status.innerHTML=active
+    ? `母艦モード: <b>ON</b> · 既知曲 <b>${rows.length}曲</b>`
+    : `母艦モード: <b>OFF</b> · 現在は内蔵既知曲リストを使用`;
+
+  const cur=sel.value;
+  sel.innerHTML='<option value="">曲を選択</option>'+
+    rows.map(r=>`<option value="${esc(r.id)}">${esc(r.track)} / ${esc(r.artist)} · W${Number(r.weight)||5}</option>`).join("");
+  if(rows.some(r=>r.id===cur))sel.value=cur;
+
+  const pid=motherPlaylistId();
+  if(pid){
+    link.href=`https://open.spotify.com/playlist/${pid}`;
+    link.style.display="inline-block";
+  }else link.style.display="none";
+}
+function loadKnownMeta(id){
+  const e=readKnownMother()[id];
+  if(!e)return;
+  $("#knownMetaWeight").value=String(Number(e.weight)||5);
+  $("#knownWeightText").textContent=String(Number(e.weight)||5);
+  $("#knownMetaLane").value=e.lane||"Electronic";
+}
+function saveKnownMeta(){
+  const id=$("#knownMetaTrack").value;if(!id)return alert("曲を選んでください");
+  const db=readKnownMother(),e=db[id];if(!e)return alert("既知曲データが見つかりません");
+  e.weight=Math.max(1,Math.min(10,Number($("#knownMetaWeight").value)||5));
+  e.lane=$("#knownMetaLane").value||"Electronic";
+  e.updatedAt=Date.now();db[id]=e;writeKnownMother(db);
+  log(`既知曲設定を保存: ${e.track} / weight ${e.weight} / ${e.lane}`);
+  renderKnownMotherUI();$("#knownMetaTrack").value=id;loadKnownMeta(id);
+}
+async function ensureKnownMotherPlaylist(){
+  let id=motherPlaylistId();
+  const name=$("#knownMotherName").value.trim()||"AI DJ KNOWN";
+  if(id)return {id,name,external_urls:{spotify:`https://open.spotify.com/playlist/${id}`}};
+
+  let p=await findOwnPlaylistByName(name);
+  if(!p){
+    p=await spotify("/me/playlists",{
+      method:"POST",
+      body:JSON.stringify({
+        name,
+        public:false,
+        description:"AI DJ known-track master library. Add/remove tracks here, then sync in AI DJ."
+      })
+    });
+  }
+  setMotherPlaylistId(p.id);renderKnownMotherUI();
+  return p;
+}
+async function replacePlaylistUris(playlistId,uris){
+  const clean=[...new Set(uris.filter(Boolean))];
+  const first=clean.slice(0,100);
+  await spotify(`/playlists/${encodeURIComponent(playlistId)}/items`,{
+    method:"PUT",body:JSON.stringify({uris:first})
+  });
+  for(let i=100;i<clean.length;i+=100){
+    await spotify(`/playlists/${encodeURIComponent(playlistId)}/items`,{
+      method:"POST",body:JSON.stringify({uris:clean.slice(i,i+100)})
+    });
+    await sleep(1000);
+  }
+  return clean.length;
+}
+async function initKnownMother(){
+  const btn=$("#initKnownMotherBtn");btn.disabled=true;
+  try{
+    const rows=legacyKnownMapped();
+    if(!rows.length)throw new Error("Spotify対応済みの既知曲がありません。先にSpotify対応表を作ってください");
+    progressEl.textContent=`母艦を初期化中… ${rows.length}曲`;
+    const p=await ensureKnownMotherPlaylist();
+    await replacePlaylistUris(p.id,rows.map(x=>x.spotify.uri));
+
+    const db={};
+    for(const e of rows)db[e.id]={...e,updatedAt:Date.now()};
+    writeKnownMother(db);setKnownMotherActive(true);
+    log(`AI DJ KNOWNを初期化: ${rows.length}曲 / 既存weightを移行`);
+    progressEl.textContent=`母艦初期化完了: ${rows.length}曲`;
+    renderKnownMotherUI();
+  }catch(e){
+    if(e.message==="SPOTIFY_QUOTA_EXCEEDED"){
+      progressEl.textContent="Spotify quota超過";
+      log("母艦初期化停止: SPOTIFY_QUOTA_EXCEEDED");
+    }else{
+      progressEl.textContent="母艦初期化失敗";
+      log("母艦初期化失敗: "+e.message);
+    }
+  }finally{btn.disabled=!token()}
+}
+async function fetchAllPlaylistTracks(playlistId){
+  const out=[];let offset=0;
+  while(true){
+    const b=await spotify(`/playlists/${encodeURIComponent(playlistId)}/items?limit=100&offset=${offset}`);
+    const items=b?.items||[];
+    for(const row of items){
+      const t=row?.item||row?.track;
+      if(t&&t.type==="track"&&!t.is_local)out.push(t);
+    }
+    if(!b?.next||items.length===0)break;
+    offset+=100;
+    await sleep(900);
+  }
+  return out;
+}
+async function syncKnownMother(){
+  const btn=$("#syncKnownMotherBtn");btn.disabled=true;
+  try{
+    const p=await ensureKnownMotherPlaylist();
+    progressEl.textContent="母艦から既知曲を同期中…";
+    const tracks=await fetchAllPlaylistTracks(p.id);
+    const old=readKnownMother(),db={};
+    const defaultWeight=Math.max(1,Math.min(10,Number($("#knownDefaultWeight").value)||5));
+
+    let added=0,preserved=0;
+    for(const raw of tracks){
+      const t=slimTrack(raw),id=t.id;if(!id)continue;
+      spotifyMapPut({artist:(t.artists||[]).map(a=>a.name).join(", "),track:t.name},t);
+
+      const oldEntry=old[id];
+      const legacy=bestKnownForSpotifyTrack(t);
+      const e={
+        id,
+        artist:(t.artists||[]).map(a=>a.name).join(", "),
+        track:t.name,
+        weight:Number(oldEntry?.weight ?? legacy?.weight ?? defaultWeight),
+        lane:oldEntry?.lane||legacy?.lane||"Electronic",
+        spotify:t,
+        source:oldEntry?.source||(legacy?"legacy":"spotify"),
+        updatedAt:Date.now()
+      };
+      if(oldEntry)preserved++;else added++;
+      db[id]=e;
+      if(legacy)spotifyMapPut(legacy,t);
+    }
+    writeKnownMother(db);setKnownMotherActive(true);
+    log(`母艦同期完了: ${Object.keys(db).length}曲 / 新規${added} / 設定維持${preserved}`);
+    progressEl.textContent=`母艦同期完了: ${Object.keys(db).length}曲`;
+    renderKnownMotherUI();
+  }catch(e){
+    if(e.message==="SPOTIFY_QUOTA_EXCEEDED"){
+      progressEl.textContent="Spotify quota超過";
+      log("母艦同期停止: SPOTIFY_QUOTA_EXCEEDED");
+    }else{
+      progressEl.textContent="母艦同期失敗";
+      log("母艦同期失敗: "+e.message);
+    }
+  }finally{btn.disabled=!token()}
+}
 function bestKnownForSpotifyTrack(t){
   const title=titleKey(t.name),artists=(t.artists||[]).map(a=>a.name).join(", ");
   let best=null,bestScore=0;
@@ -584,12 +833,20 @@ let fullScanStop=false;
 let fullScanLines=[];
 
 function spotifyCacheUniqueTracks(){
-  const map=readSpotifyMap(),byId=new Map();
-  for(const t of Object.values(map)){
-    if(!t?.id&&!t?.uri)continue;
-    const id=t.id||String(t.uri||"").split(":").pop();
-    if(!id||byId.has(id))continue;
-    byId.set(id,t);
+  const byId=new Map();
+  if(knownMotherActive()){
+    for(const e of motherEntries()){
+      const t=e.spotify;if(!t?.id)continue;
+      if(!byId.has(t.id))byId.set(t.id,t);
+    }
+  }else{
+    const map=readSpotifyMap();
+    for(const t of Object.values(map)){
+      if(!t?.id&&!t?.uri)continue;
+      const id=t.id||String(t.uri||"").split(":").pop();
+      if(!id||byId.has(id))continue;
+      byId.set(id,t);
+    }
   }
   return [...byId.values()].sort((a,b)=>{
     const aa=(a.artists||[]).map(x=>x.name).join(", ");
@@ -721,6 +978,20 @@ async function enrichFreqBlog(items,label){
 
 function cachedKnownPool(lanes){
   const out=[],seen=new Set();
+  if(knownMotherActive()){
+    for(const e of motherEntries()){
+      if(!lanes.has(e.lane||"Electronic"))continue;
+      const t=e.spotify;if(!t?.id)continue;
+      const u=t.uri||`spotify:track:${t.id}`;
+      if(seen.has(u))continue;
+      seen.add(u);
+      out.push({
+        artist:e.artist,track:e.track,weight:Number(e.weight)||5,lane:e.lane||"Electronic",
+        type:"known",spotify:t,knownSource:"mother"
+      });
+    }
+    return out;
+  }
   for(const x of KNOWN){
     if(!lanes.has(x.lane))continue;
     const t=spotifyMapGet(x);
@@ -728,7 +999,7 @@ function cachedKnownPool(lanes){
     const u=t.uri||`spotify:track:${t.id}`;
     if(seen.has(u))continue;
     seen.add(u);
-    out.push({...x,type:"known",spotify:t});
+    out.push({...x,type:"known",spotify:t,knownSource:"legacy"});
   }
   return out;
 }
@@ -825,7 +1096,7 @@ async function discoverUnknown(known,need,globalUris){
     const b=await fbSimilar(seed,Math.max(16,need*4));
     for(const r of (b?.results||[])){
       const c=similarCandidateFromResult(r,seed);if(!c)continue;
-      if(KNOWN_KEYS.has(keyOf(c.artist,c.track))||KNOWN_TITLES.has(titleKey(c.track)))continue;
+      if(currentKnownHas(c.artist,c.track))continue;
       const k=keyOf(c.artist,c.track),old=map.get(k);
       if(!old||c.weight>old.weight)map.set(k,c);
     }
@@ -1397,6 +1668,13 @@ $("#applySpotifyBtn").addEventListener("click",applyPendingToSpotify);
 $("#warmSpotifyBtn").addEventListener("click",warmSpotifyCacheFromOwnAIPlaylists);
 $("#knownRatio").addEventListener("input",e=>$("#ratioText").textContent=e.target.value+"%");
 $("#clearCacheBtn").addEventListener("click",()=>{localStorage.removeItem(CACHE_KEY);log("FreqBlog音響キャッシュを消去しました")});
+$("#initKnownMotherBtn").addEventListener("click",initKnownMother);
+$("#syncKnownMotherBtn").addEventListener("click",syncKnownMother);
+$("#knownMetaTrack").addEventListener("change",e=>loadKnownMeta(e.target.value));
+$("#knownMetaWeight").addEventListener("input",e=>$("#knownWeightText").textContent=e.target.value);
+$("#saveKnownMetaBtn").addEventListener("click",saveKnownMeta);
+$("#knownMotherName").addEventListener("change",e=>localStorage.setItem("ai_dj_known_mother_name_v213",e.target.value.trim()));
+$("#knownDefaultWeight").addEventListener("change",e=>localStorage.setItem("ai_dj_known_default_weight_v213",String(e.target.value)));
 $("#scanAllBtn").addEventListener("click",scanAllAudio);
 $("#stopScanBtn").addEventListener("click",()=>{fullScanStop=true;$("#stopScanBtn").disabled=true;$("#scanStatus").textContent+=" / 停止要求中…"});
 $("#copyScanLogBtn").addEventListener("click",copyScanLog);
@@ -1412,7 +1690,14 @@ clientIdEl.addEventListener("change",()=>localStorage.setItem("spotify_client_id
 proxyUrlEl.addEventListener("change",()=>localStorage.setItem("ai_dj_proxy_url",proxyUrlEl.value.trim().replace(/\/$/,"")));
 proxyTokenEl.addEventListener("change",()=>localStorage.setItem("ai_dj_proxy_token",proxyTokenEl.value.trim()));
 
-(async()=>{renderManualAudioUI();try{await exchangeCode()}catch(e){log("OAuth失敗: "+e.message)}const p=loadPendingSet();if(p)renderPendingSet(p);await refreshStatus()})();
+(async()=>{
+  $("#knownMotherName").value=localStorage.getItem("ai_dj_known_mother_name_v213")||"AI DJ KNOWN";
+  $("#knownDefaultWeight").value=localStorage.getItem("ai_dj_known_default_weight_v213")||"5";
+  renderKnownMotherUI();renderManualAudioUI();
+  try{await exchangeCode()}catch(e){log("OAuth失敗: "+e.message)}
+  const p=loadPendingSet();if(p)renderPendingSet(p);
+  await refreshStatus();
+})();
 </script>
 </body>
 </html>
