@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v21.3 KNOWN Mother</title>
+<title>AI DJ v21.5 Discovery Fix</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v21.3 KNOWN Mother</h1>
-<p class="sub">v21 Crate SelectorのDJロジックはそのまま。Spotifyの「AI DJ KNOWN」を既知曲の母艦にして、追加・削除・優先度を同期できます。</p>
+<h1>AI DJ v21.5 Discovery Fix</h1>
+<p class="sub">v21.4の機能はそのまま。既知率UIの不整合を修正し、既定で70%既知 / 30%未知を正しく生成します。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -48,10 +48,25 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <span class="badge">2. セット設定</span>
 <div class="row" style="margin-top:12px">
 <div><label>曲数</label><input id="trackCount" type="number" min="10" max="50" value="30"></div>
-<div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="100" step="5" value="100"></div>
+<div><label>既知曲の割合 <span id="ratioText">70%</span></label><input id="knownRatio" type="range" min="50" max="100" step="5" value="70"></div>
 <div><label>Spotifyプレイリスト名</label><input id="setName" type="text" value="AI DJ NOW"></div>
 </div>
+
+<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+<label>Spotify出力先</label>
+<p class="small">同名プレイリストが複数ある場合は、最初に1回だけ出力先を固定します。以後はそのPlaylist IDだけを書き換えます。</p>
+<div class="row">
+<div>
+<select id="outputPlaylistSelect"><option value="">出力先を読み込んでください</option></select>
+</div>
+</div>
+<button id="loadOutputPlaylistsBtn" class="secondary" disabled>同名の出力先を読み込む</button>
+<button id="fixOutputPlaylistBtn" class="secondary" disabled>選んだ出力先に固定</button>
+<button id="createOutputPlaylistBtn" class="secondary" disabled>新しい出力先を作成して固定</button>
+<p id="outputPlaylistStatus" class="small">出力先: 未固定</p>
+</div>
 <p class="small">出力30曲なら、既知曲は最大50曲前後を候補として解析し、繋ぎにくい曲を外してからセットを組みます。未知曲がquotaで取れない場合は既知曲で自動補充します。同じ主アーティストは最大3曲連続まで。</p>
+<p id="discoveryHint" class="small">現在の設定: 既知70% / 未知30%</p>
 
 <div style="margin-top:12px"><label>既知曲のレーン</label>
 <div class="lanes">
@@ -304,12 +319,12 @@ async function exchangeCode(){
 async function refreshStatus(){
   if(!token()){
     statusEl.textContent="Spotify: 未接続";
-    generateBtn.disabled=true;warmSpotifyBtn.disabled=true;applySpotifyBtn.disabled=true;$("#initKnownMotherBtn").disabled=true;$("#syncKnownMotherBtn").disabled=true;
+    generateBtn.disabled=true;warmSpotifyBtn.disabled=true;applySpotifyBtn.disabled=true;$("#initKnownMotherBtn").disabled=true;$("#syncKnownMotherBtn").disabled=true;$("#loadOutputPlaylistsBtn").disabled=true;$("#fixOutputPlaylistBtn").disabled=true;$("#createOutputPlaylistBtn").disabled=true;
     return;
   }
   statusEl.textContent="Spotify: 接続済み（API呼び出し節約モード）";
   statusEl.className="small ok";
-  generateBtn.disabled=false;warmSpotifyBtn.disabled=false;$("#initKnownMotherBtn").disabled=false;$("#syncKnownMotherBtn").disabled=false;
+  generateBtn.disabled=false;warmSpotifyBtn.disabled=false;$("#initKnownMotherBtn").disabled=false;$("#syncKnownMotherBtn").disabled=false;$("#loadOutputPlaylistsBtn").disabled=false;$("#fixOutputPlaylistBtn").disabled=false;$("#createOutputPlaylistBtn").disabled=false;
   applySpotifyBtn.disabled=!loadPendingSet();
 }
 
@@ -468,7 +483,11 @@ async function initKnownMother(){
     progressEl.textContent=`母艦初期化完了: ${rows.length}曲`;
     renderKnownMotherUI();
   }catch(e){
-    if(e.message==="SPOTIFY_QUOTA_EXCEEDED"){
+    if(e.message==="SPOTIFY_OUTPUT_NOT_FIXED"){
+      progressEl.textContent="Spotify出力先が未固定";
+      summaryEl.innerHTML+=`<br><span class="warn">「同名の出力先を読み込む」→使いたいAI DJ NOWを選択→「選んだ出力先に固定」を1回だけ実行してください。</span>`;
+      log("Spotify反映停止: 出力先が未固定");
+    }else if(e.message==="SPOTIFY_QUOTA_EXCEEDED"){
       progressEl.textContent="Spotify quota超過";
       log("母艦初期化停止: SPOTIFY_QUOTA_EXCEEDED");
     }else{
@@ -1442,31 +1461,88 @@ async function findOwnPlaylistByName(name){
     if(!b?.next)break;offset+=50;
   }return null;
 }
-async function writePlaylist(name,seq){
-  let p=null;
-  const cachedId=localStorage.getItem(SPOTIFY_PLAYLIST_ID_KEY)||"";
-  if(cachedId){
-    p={id:cachedId,name,external_urls:{spotify:`https://open.spotify.com/playlist/${cachedId}`}};
-  }else{
-    p=await findOwnPlaylistByName(name);
-    if(!p){
-      p=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:"AI DJ v17 Low-Quota Sonic Mix"})});
-    }
-    localStorage.setItem(SPOTIFY_PLAYLIST_ID_KEY,p.id);
+
+const OUTPUT_FIXED_ID_KEY="ai_dj_output_fixed_id_v214";
+const OUTPUT_FIXED_NAME_KEY="ai_dj_output_fixed_name_v214";
+
+function fixedOutputId(){return localStorage.getItem(OUTPUT_FIXED_ID_KEY)||""}
+function fixedOutputName(){return localStorage.getItem(OUTPUT_FIXED_NAME_KEY)||""}
+function setFixedOutput(id,name){
+  if(id)localStorage.setItem(OUTPUT_FIXED_ID_KEY,id);else localStorage.removeItem(OUTPUT_FIXED_ID_KEY);
+  if(name)localStorage.setItem(OUTPUT_FIXED_NAME_KEY,name);else localStorage.removeItem(OUTPUT_FIXED_NAME_KEY);
+  renderOutputStatus();
+}
+function renderOutputStatus(){
+  const el=$("#outputPlaylistStatus");if(!el)return;
+  const id=fixedOutputId(),name=fixedOutputName();
+  el.innerHTML=id
+    ? `出力先固定: <b>${esc(name||"playlist")}</b> · <code>${esc(id)}</code>`
+    : `出力先: <b>未固定</b>`;
+}
+async function listOwnPlaylistsAll(){
+  const out=[];let offset=0;
+  while(true){
+    const b=await spotify(`/me/playlists?limit=50&offset=${offset}`);
+    const items=b?.items||[];out.push(...items);
+    if(!b?.next||items.length===0)break;
+    offset+=50;await sleep(700);
   }
-  const uris=seq.map(x=>x.spotify.uri);
+  return out;
+}
+async function loadOutputPlaylists(){
+  const name=$("#setName").value.trim()||"AI DJ NOW";
+  const sel=$("#outputPlaylistSelect"),btn=$("#loadOutputPlaylistsBtn");
+  btn.disabled=true;
   try{
-    await spotify(`/playlists/${encodeURIComponent(p.id)}/items`,{method:"PUT",body:JSON.stringify({uris})});
+    const all=await listOwnPlaylistsAll();
+    const hits=all.filter(p=>p?.name===name);
+    sel.innerHTML='<option value="">選択してください</option>'+
+      hits.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · …${esc(p.id.slice(-6))}${p.description?` · ${esc(p.description.slice(0,55))}`:""}</option>`).join("");
+    $("#outputPlaylistStatus").innerHTML=`「${esc(name)}」を <b>${hits.length}件</b> 検出`;
+    if(hits.length===1)sel.value=hits[0].id;
+    log(`Spotify出力先候補: ${hits.length}件 / ${name}`);
   }catch(e){
-    // Cached playlist may have been deleted; resolve once.
-    if(cachedId && !/QUOTA/.test(e.message)){
-      localStorage.removeItem(SPOTIFY_PLAYLIST_ID_KEY);
-      p=await findOwnPlaylistByName(name);
-      if(!p)p=await spotify("/me/playlists",{method:"POST",body:JSON.stringify({name,public:false,description:"AI DJ v17 Low-Quota Sonic Mix"})});
-      localStorage.setItem(SPOTIFY_PLAYLIST_ID_KEY,p.id);
-      await spotify(`/playlists/${encodeURIComponent(p.id)}/items`,{method:"PUT",body:JSON.stringify({uris})});
-    }else throw e;
-  }
+    log("出力先読込失敗: "+e.message);
+  }finally{btn.disabled=!token()}
+}
+function fixSelectedOutput(){
+  const sel=$("#outputPlaylistSelect"),id=sel.value;
+  if(!id)return alert("出力先を選んでください");
+  const name=$("#setName").value.trim()||"AI DJ NOW";
+  setFixedOutput(id,name);
+  log(`Spotify出力先を固定: ${name} / ${id}`);
+}
+async function createAndFixOutput(){
+  const name=$("#setName").value.trim()||"AI DJ NOW";
+  $("#createOutputPlaylistBtn").disabled=true;
+  try{
+    const p=await spotify("/me/playlists",{
+      method:"POST",
+      body:JSON.stringify({name,public:false,description:"AI DJ v21.4 fixed output playlist"})
+    });
+    setFixedOutput(p.id,p.name||name);
+    $("#outputPlaylistSelect").innerHTML=`<option value="${esc(p.id)}">${esc(p.name||name)} · …${esc(p.id.slice(-6))}</option>`;
+    $("#outputPlaylistSelect").value=p.id;
+    log(`新しいSpotify出力先を作成・固定: ${p.name||name} / ${p.id}`);
+  }catch(e){
+    log("出力先作成失敗: "+e.message);
+  }finally{$("#createOutputPlaylistBtn").disabled=!token()}
+}
+
+async function writePlaylist(name,seq){
+  const id=fixedOutputId();
+  if(!id)throw new Error("SPOTIFY_OUTPUT_NOT_FIXED");
+  const p={
+    id,
+    name:fixedOutputName()||name,
+    external_urls:{spotify:`https://open.spotify.com/playlist/${id}`}
+  };
+  const uris=seq.map(x=>x.spotify.uri);
+  await spotify(`/playlists/${encodeURIComponent(id)}/items`,{
+    method:"PUT",
+    body:JSON.stringify({uris})
+  });
+  log(`Spotify書込先: ${p.name} / ${id} / ${uris.length}曲`);
   return p;
 }
 
@@ -1577,9 +1653,16 @@ async function generate(){
     let unknown=[];
     if(unknownTarget>0){
       progressEl.textContent="未知曲を音響類似で探索中…";
+      log(`未知曲を ${unknownTarget}曲 要求`);
       unknown=await discoverUnknown(seedKnown,unknownTarget,seedUris);
+      log(`未知曲 resolved ${unknown.length}/${unknownTarget}`);
       await enrichFreqBlog(unknown.filter(x=>!x.mix),"未知候補");
       await enrichEmbeddings(unknown);
+      if(unknown.length===0){
+        log("警告: 未知曲が0曲です。FreqBlog類似候補のSpotify ID/キャッシュ不足、またはSpotify quota超過の可能性があります。");
+      }else if(unknown.length<unknownTarget){
+        log(`警告: 未知曲が不足 ${unknown.length}/${unknownTarget}。不足分は既知曲で補充します。`);
+      }
     }
 
     // Recompute Sonic stats with discovery tracks too.
@@ -1628,7 +1711,10 @@ async function generate(){
     const avg=mixScores.length?Math.round(mixScores.reduce((a,b)=>a+b,0)/mixScores.length):0;
     const summary=`${seq.length}曲 / 既知${finalKnown.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
     savePendingSet(name,seq,summary);
-    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v21は候補を多めに解析し、繋ぎにくい曲を最終セットから外します。未知不足時は既知で補充します。</span>`;
+    const unknownNote=unknownTarget>0&&unknown.length<unknownTarget
+      ? `<br><span class="warn">未知は目標${unknownTarget}曲中${unknown.length}曲。ログの「未知Spotify検索」「quota超過」を確認してください。</span>`
+      : "";
+    summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v21は候補を多めに解析し、繋ぎにくい曲を最終セットから外します。未知不足時は既知で補充します。</span>${unknownNote}`;
     progressEl.textContent="ローカル生成完了";
     log(`ローカル生成完了: ${summary}`);
   }catch(e){
@@ -1666,8 +1752,16 @@ $("#connectBtn").addEventListener("click",connect);
 $("#generateBtn").addEventListener("click",generate);
 $("#applySpotifyBtn").addEventListener("click",applyPendingToSpotify);
 $("#warmSpotifyBtn").addEventListener("click",warmSpotifyCacheFromOwnAIPlaylists);
-$("#knownRatio").addEventListener("input",e=>$("#ratioText").textContent=e.target.value+"%");
+$("#knownRatio").addEventListener("input",e=>{
+  const v=Number(e.target.value)||70;
+  $("#ratioText").textContent=v+"%";
+  const h=$("#discoveryHint");
+  if(h)h.textContent=`現在の設定: 既知${v}% / 未知${100-v}%`;
+});
 $("#clearCacheBtn").addEventListener("click",()=>{localStorage.removeItem(CACHE_KEY);log("FreqBlog音響キャッシュを消去しました")});
+$("#loadOutputPlaylistsBtn").addEventListener("click",loadOutputPlaylists);
+$("#fixOutputPlaylistBtn").addEventListener("click",fixSelectedOutput);
+$("#createOutputPlaylistBtn").addEventListener("click",createAndFixOutput);
 $("#initKnownMotherBtn").addEventListener("click",initKnownMother);
 $("#syncKnownMotherBtn").addEventListener("click",syncKnownMother);
 $("#knownMetaTrack").addEventListener("change",e=>loadKnownMeta(e.target.value));
@@ -1693,7 +1787,10 @@ proxyTokenEl.addEventListener("change",()=>localStorage.setItem("ai_dj_proxy_tok
 (async()=>{
   $("#knownMotherName").value=localStorage.getItem("ai_dj_known_mother_name_v213")||"AI DJ KNOWN";
   $("#knownDefaultWeight").value=localStorage.getItem("ai_dj_known_default_weight_v213")||"5";
-  renderKnownMotherUI();renderManualAudioUI();
+  const initialRatio=Number($("#knownRatio").value)||70;
+  $("#ratioText").textContent=initialRatio+"%";
+  if($("#discoveryHint"))$("#discoveryHint").textContent=`現在の設定: 既知${initialRatio}% / 未知${100-initialRatio}%`;
+  renderKnownMotherUI();renderManualAudioUI();renderOutputStatus();
   try{await exchangeCode()}catch(e){log("OAuth失敗: "+e.message)}
   const p=loadPendingSet();if(p)renderPendingSet(p);
   await refreshStatus();
