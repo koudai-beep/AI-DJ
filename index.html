@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v21.6 Quota-Free Discovery</title>
+<title>AI DJ v21.7 DJ Tempo Class</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v21.6 Quota-Free Discovery</h1>
-<p class="sub">v21.5の機能はそのまま。Spotify Search quotaが死んでいても、過去のSpotify対応表キャッシュを「未知曲リザーバー」として音響類似選曲します。</p>
+<h1>AI DJ v21.7 DJ Tempo Class</h1>
+<p class="sub">v21.6の機能はそのまま。BPMの1/2・2倍を同一テンポクラスとして扱い、SonicからBPM / Key / Energyを完全分離しました。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -1290,19 +1290,37 @@ function wouldMakeFour(out,cand){
   if(out.length<3)return false;const k=creatorKey(cand);if(!k)return false;
   return creatorKey(out.at(-1))===k&&creatorKey(out.at(-2))===k&&creatorKey(out.at(-3))===k;
 }
+function octaveBpmMatch(a,b){
+  const A=a?.mix?.tempo,B=b?.mix?.tempo;
+  if(!Number.isFinite(A)||!Number.isFinite(B)||A<=0||B<=0)return null;
+  const variants=[
+    {mult:.5,value:B*.5,label:"½テンポ同等"},
+    {mult:1,value:B,label:"同速"},
+    {mult:2,value:B*2,label:"2倍テンポ同等"}
+  ];
+  let best=variants[0];
+  for(const v of variants){
+    if(Math.abs(A-v.value)<Math.abs(A-best.value))best=v;
+  }
+  const delta=Math.abs(A-best.value);
+  const pct=delta/Math.max(1e-9,A);
+  return {...best,delta,pct,baseA:A,baseB:B};
+}
 function octaveBpmDelta(a,b){
-  const A=a?.mix?.tempo,B=b?.mix?.tempo;if(!Number.isFinite(A)||!Number.isFinite(B))return null;
-  return Math.min(...[B,B/2,B*2].map(v=>Math.abs(A-v)));
+  return octaveBpmMatch(a,b)?.delta??null;
 }
 function bpmCost(a,b){
-  const d=octaveBpmDelta(a,b);
-  if(d===null)return .50;
-  if(d<=2)return 0;
-  if(d<=4)return .08;
-  if(d<=7)return .22;
-  if(d<=10)return .42;
-  if(d<=14)return .68;
-  if(d<=18)return .90;
+  const m=octaveBpmMatch(a,b);
+  if(!m)return .50;
+  // DJ視点では「何BPM差」よりpitch/tempo changeの割合を重視する。
+  // 80↔160 / 75↔150 / 87↔174 は pct=0 なので完全同格。
+  const p=m.pct;
+  if(p<=.015)return 0;
+  if(p<=.030)return .08;
+  if(p<=.050)return .22;
+  if(p<=.070)return .42;
+  if(p<=.090)return .68;
+  if(p<=.120)return .90;
   return 1.0;
 }
 function parseCamelot(c){
@@ -1343,11 +1361,15 @@ function genreMoodCost(a,b){
 }
 
 /*
-FreqBlog's /similar endpoint z-score normalises each feature across its whole catalogue.
-Raw cosine on /embedding values is NOT used here because it produced misleading 99-100%
-similarities for very different tracks. Instead, v20 builds per-field statistics over the
-current DJ set and compares only descriptor-style fields after standardisation.
+Sonic = 音の質感だけ。
+BPM / Key / Energy はDJ用の専用スコアで別評価するため、embeddingから完全除外する。
+これで 80↔160 BPM のようなhalf/double-time関係を、Sonic側が誤って遠いと判定しない。
 */
+const SONIC_EXCLUDED_FIELDS=new Set([
+  "bpm","bpm_confidence",
+  "key_pc","mode","key_confidence",
+  "energy"
+]);
 let EMBED_STATS=null;
 
 function getEmbeddingVector(x){
@@ -1373,8 +1395,12 @@ function prepareEmbeddingStats(items){
   const dims=Math.max(...rows.map(r=>r.v.values.length));
   const stats={};
   const fields=Array.from({length:dims},(_,i)=>rows.find(r=>r.v.fields?.[i])?.v.fields?.[i]||`f${i}`);
+  const activeFields=[];
 
   for(let i=0;i<dims;i++){
+    const field=String(fields[i]||`f${i}`);
+    if(SONIC_EXCLUDED_FIELDS.has(field))continue;
+
     const vals=[];
     for(const r of rows){
       const val=Number(r.v.values[i]);
@@ -1384,9 +1410,12 @@ function prepareEmbeddingStats(items){
     const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
     const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length;
     const sd=Math.sqrt(variance);
-    if(sd>1e-8)stats[i]={name:String(fields[i]||`f${i}`),mean,sd};
+    if(sd>1e-8){
+      stats[i]={name:field,mean,sd};
+      activeFields.push(field);
+    }
   }
-  EMBED_STATS={fields,stats,rowCount:rows.length};
+  EMBED_STATS={fields:activeFields,allFields:fields,stats,rowCount:rows.length};
 }
 function sonicSimilarity(a,b){
   const A=getEmbeddingVector(a),B=getEmbeddingVector(b);
@@ -1404,13 +1433,20 @@ function sonicSimilarity(a,b){
   return Math.exp(-0.72*rms);
 }
 function fallbackSonicSimilarity(a,b){
-  const costs=[
-    scalarCost(a,b,"acousticness",1.6),
-    scalarCost(a,b,"instrumentalness",1.35),
-    scalarCost(a,b,"danceability",1.25),
-    scalarCost(a,b,"valence",1.0),
-    scalarCost(a,b,"energy",1.2)
+  // BPM / Key / Energyは禁止。Sonic fallbackも質感系だけで作る。
+  const specs=[
+    ["acousticness",1.6],
+    ["instrumentalness",1.35],
+    ["danceability",1.25],
+    ["valence",1.0],
+    ["speechiness",1.2]
   ];
+  const costs=[];
+  for(const [k,scale] of specs){
+    const A=a?.mix?.[k],B=b?.mix?.[k];
+    if(Number.isFinite(A)&&Number.isFinite(B))costs.push(clamp(Math.abs(A-B)*scale));
+  }
+  if(!costs.length)return .55;
   return 1-clamp(costs.reduce((x,y)=>x+y,0)/costs.length);
 }
 function effectiveSonicSimilarity(a,b){
@@ -1420,20 +1456,22 @@ function effectiveSonicSimilarity(a,b){
 function pairMetrics(a,b){
   const sonic=effectiveSonicSimilarity(a,b);
   const sc=1-clamp(sonic,0,1);
-  const bd=octaveBpmDelta(a,b),bc=bpmCost(a,b),kc=keyCost(a,b);
+  const bm=octaveBpmMatch(a,b);
+  const bd=bm?.delta??null,bc=bpmCost(a,b),kc=keyCost(a,b);
   const ec=scalarCost(a,b,"energy",1.55);
-  const dc=scalarCost(a,b,"danceability",1.35);
-  const spectral=(scalarCost(a,b,"acousticness",1.6)+scalarCost(a,b,"instrumentalness",1.35))/2;
   const gm=genreMoodCost(a,b);
 
-  // Sonic score already contains some BPM/key/energy information, so direct DJ constraints remain dominant.
-  let cost=.20*sc+.29*bc+.20*kc+.13*ec+.05*dc+.08*spectral+.05*gm;
+  // v21.7: 完全に役割分担。
+  // BPM 32% / Key 23% / Energy 16% / Sonic texture 24% / Genre-Mood 5%
+  // SonicにはBPM・Key・Energyを一切入れない。
+  let cost=.24*sc+.32*bc+.23*kc+.16*ec+.05*gm;
 
   let hardPenalty=0;
-  if(bd!==null){
-    if(bd>25)hardPenalty+=.44;
-    else if(bd>18)hardPenalty+=.29;
-    else if(bd>14)hardPenalty+=.13;
+  if(bm){
+    const p=bm.pct;
+    if(p>.15)hardPenalty+=.44;
+    else if(p>.11)hardPenalty+=.29;
+    else if(p>.08)hardPenalty+=.13;
   }
   if(kc>=1.0)hardPenalty+=.17;
   else if(kc>=.58)hardPenalty+=.07;
@@ -1451,25 +1489,29 @@ function pairMetrics(a,b){
   cost=clamp(cost+hardPenalty,0,1.35);
   let score=Math.round((1-clamp(cost,0,1))*100);
 
-  if(bd!==null&&bd>25)score=Math.min(score,32);
-  else if(bd!==null&&bd>18)score=Math.min(score,50);
-  else if(bd!==null&&bd>14)score=Math.min(score,66);
+  if(bm?.pct>.15)score=Math.min(score,32);
+  else if(bm?.pct>.11)score=Math.min(score,50);
+  else if(bm?.pct>.08)score=Math.min(score,66);
   if(kc>=1.0)score=Math.min(score,60);
   if(energyDelta!==null&&energyDelta>.70)score=Math.min(score,52);
 
   return {
     cost,score,sonic,
-    bpmDelta:bd,bpmCost:bc,keyCost:kc,energyCost:ec,energyDelta,
+    bpmDelta:bd,bpmPct:bm?.pct??null,bpmClass:bm?.label||"BPM?",
+    bpmAdjusted:bm?.value??null,bpmMultiplier:bm?.mult??null,
+    bpmCost:bc,keyCost:kc,energyCost:ec,energyDelta,
     keyLabel:keyLabel(a,b),hardPenalty
   };
 }
 function transitionLogLine(a,b,index){
   const m=pairMetrics(a,b);
   const bpm=m.bpmDelta===null?"?":m.bpmDelta.toFixed(1);
+  const pct=m.bpmPct===null?"?":(m.bpmPct*100).toFixed(1)+"%";
+  const classNote=(m.bpmMultiplier===.5||m.bpmMultiplier===2)?` · ${m.bpmClass}`:"";
   const sonic=Math.round(clamp(m.sonic,0,1)*100);
   const ed=m.energyDelta===null?"?":m.energyDelta.toFixed(2);
   const guard=m.hardPenalty>0?` · penalty +${m.hardPenalty.toFixed(2)}`:"";
-  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔBPM ${bpm} | ${m.keyLabel} | Sonic ${sonic}% | ΔEnergy ${ed}${guard}`;
+  return `${index}. ${a.spotify.name} → ${b.spotify.name} | Mix ${m.score}/100 | ΔTempo ${pct} (ΔBPM ${bpm})${classNote} | ${m.keyLabel} | Sonic ${sonic}% | ΔEnergy ${ed}${guard}`;
 }
 function routeCost(seq){let c=0;for(let i=1;i<seq.length;i++)c+=pairMetrics(seq[i-1],seq[i]).cost;return c}
 function chooseStart(pool){
@@ -1493,7 +1535,7 @@ function greedySequence(items){
     // If at least one genuinely safe transition exists, don't consider severe ones.
     const evaluated=allowed.map(x=>({x,m:pairMetrics(cur,x)}));
     const safe=evaluated.filter(z=>
-      (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
+      (z.m.bpmPct===null||z.m.bpmPct<=.11) &&
       z.m.keyCost<1.0 &&
       z.m.sonic>=.20 &&
       (z.m.energyDelta===null||z.m.energyDelta<=.70)
@@ -1524,7 +1566,7 @@ function severeTransitionCount(seq){
   let n=0;
   for(let i=1;i<seq.length;i++){
     const m=pairMetrics(seq[i-1],seq[i]);
-    if((m.bpmDelta!==null&&m.bpmDelta>18)||m.keyCost>=1.0||m.sonic<.20||(m.energyDelta!==null&&m.energyDelta>.70))n++;
+    if((m.bpmPct!==null&&m.bpmPct>.11)||m.keyCost>=1.0||m.sonic<.20||(m.energyDelta!==null&&m.energyDelta>.70))n++;
   }
   return n;
 }
@@ -1677,7 +1719,7 @@ function chooseKnownSubset(pool,count,required=[]){
 
     const evaluated=allowed.map(x=>({x,m:pairMetrics(chosen.at(-1),x)}));
     const safe=evaluated.filter(z=>
-      (z.m.bpmDelta===null||z.m.bpmDelta<=18) &&
+      (z.m.bpmPct===null||z.m.bpmPct<=.11) &&
       z.m.keyCost<1.0 &&
       z.m.sonic>=.20 &&
       (z.m.energyDelta===null||z.m.energyDelta<=.70)
@@ -1746,7 +1788,7 @@ async function generate(){
     prepareEmbeddingStats(goodKnown);
     const dims=EMBED_STATS?Object.keys(EMBED_STATS.stats).length:0;
     log(`Sonic比較: embedding ${EMBED_STATS?.rowCount||0}曲 / 有効 ${dims}次元`);
-    if(EMBED_STATS?.fields?.length)log(`Embedding fields: ${EMBED_STATS.fields.join(", ")}`);
+    if(EMBED_STATS?.fields?.length)log(`Sonic fields (BPM/Key/Energy除外): ${EMBED_STATS.fields.join(", ")}`);
 
     // Use a well-connected subset as discovery seeds.
     let seedKnown=chooseKnownSubset(goodKnown,Math.min(knownTarget,goodKnown.length));
