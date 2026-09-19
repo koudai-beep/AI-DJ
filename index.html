@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI DJ v21.5 Discovery Fix</title>
+<title>AI DJ v21.6 Quota-Free Discovery</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--card:#151923;--line:#2b3242;--text:#f6f7fb;--muted:#aeb6c8;--accent:#7da2ff;--ok:#55d69e;--warn:#ffd166;--bad:#ff7b8b}
 *{box-sizing:border-box}
@@ -29,8 +29,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main>
-<h1>AI DJ v21.5 Discovery Fix</h1>
-<p class="sub">v21.4の機能はそのまま。既知率UIの不整合を修正し、既定で70%既知 / 30%未知を正しく生成します。</p>
+<h1>AI DJ v21.6 Quota-Free Discovery</h1>
+<p class="sub">v21.5の機能はそのまま。Spotify Search quotaが死んでいても、過去のSpotify対応表キャッシュを「未知曲リザーバー」として音響類似選曲します。</p>
 
 <section class="card">
 <span class="badge">1. 接続</span>
@@ -1036,6 +1036,101 @@ function cachedUnknownCandidate(c){
   const hit=spotifyMapGet(c);
   return hit?{...c,spotify:hit,matchScore:1,fromSpotifyCache:true}:null;
 }
+function cachedDiscoveryReservoir(globalUris){
+  const map=readSpotifyMap(),byId=new Map();
+  for(const t of Object.values(map)){
+    if(!t?.id)continue;
+    const uri=t.uri||`spotify:track:${t.id}`;
+    if(globalUris?.has(uri))continue;
+    const artist=(t.artists||[]).map(a=>a.name).join(", ");
+    const track=t.name||"";
+    if(!artist||!track)continue;
+    if(currentKnownHas(artist,track))continue;
+    if(!byId.has(t.id)){
+      byId.set(t.id,{
+        artist,track,type:"discovery",spotify:slimTrack(t),
+        similarity:null,genreRelation:"cache",seed:"",
+        weight:1,fromDiscoveryReservoir:true
+      });
+    }
+  }
+  return [...byId.values()];
+}
+async function resolveFromCachedDiscoveryReservoir(known,resolved,need,globalUris){
+  const missing=Math.max(0,need-resolved.length);
+  if(missing<=0)return;
+
+  let pool=cachedDiscoveryReservoir(globalUris);
+  if(!pool.length){
+    log("未知リザーバー: Spotifyキャッシュ内に未既知曲なし");
+    return;
+  }
+
+  // Rotate the sample each run so discovery doesn't converge on the same few tracks.
+  for(let i=pool.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  const sampleLimit=Math.min(pool.length,Math.max(18,missing*5));
+  pool=pool.slice(0,sampleLimit);
+  log(`未知リザーバー候補 ${pool.length}曲（Spotify Search 0回）`);
+
+  const usable=[];
+  for(let i=0;i<pool.length;i++){
+    const x=pool[i];
+    await fbLookupTrack(x);
+    if(!x.mix?.tempo)continue;
+    await fbEmbedding(x);
+    usable.push(x);
+    progressEl.textContent=`未知リザーバー音響解析 ${i+1}/${pool.length}（usable ${usable.length}）`;
+    await sleep(90);
+  }
+  if(!usable.length){
+    log("未知リザーバー: FreqBlog usable 0曲");
+    return;
+  }
+
+  // Keep the known-crate z-score frame so the cached tracks are evaluated against the current set.
+  // pairMetrics() can score tracks even when some embedding dimensions are missing.
+  const ranked=usable.map(x=>{
+    let best=null;
+    for(const k of known){
+      const m=pairMetrics(k,x);
+      if(!best||m.cost<best.m.cost)best={seed:k,m};
+    }
+    return {x,seed:best?.seed,m:best?.m,score:best?1-best.m.cost:0};
+  }).filter(r=>r.m).sort((a,b)=>b.score-a.score);
+
+  // Diversity: choose stochastically from the top band instead of always taking the exact same tracks.
+  const chosenArtists=new Map();
+  while(resolved.length<need&&ranked.length){
+    const band=ranked.splice(0,Math.min(8,ranked.length));
+    const weighted=band.map(r=>{
+      const a=alias((r.x.spotify.artists||[])[0]?.name||r.x.artist);
+      const repeat=chosenArtists.get(a)||0;
+      const w=Math.max(.03,Math.pow(Math.max(.05,r.score),3))*(repeat>=1?.35:1);
+      return {r,w};
+    });
+    const sum=weighted.reduce((a,z)=>a+z.w,0);
+    let q=Math.random()*sum,pick=weighted[0]?.r;
+    for(const z of weighted){q-=z.w;if(q<=0){pick=z.r;break}}
+    // Put non-picked band items back so they remain eligible.
+    for(const r of band)if(r!==pick)ranked.push(r);
+    ranked.sort((a,b)=>b.score-a.score);
+    if(!pick)break;
+
+    const x=pick.x,uri=x.spotify.uri;
+    if(globalUris.has(uri))continue;
+    globalUris.add(uri);
+    x.seed=pick.seed?.spotify?.name||pick.seed?.track||"cached crate";
+    x.similarity=clamp(pick.score,0,1);
+    x.weight=.65+x.similarity;
+    resolved.push(x);
+    const ak=alias((x.spotify.artists||[])[0]?.name||x.artist);
+    chosenArtists.set(ak,(chosenArtists.get(ak)||0)+1);
+    log(`未知リザーバー採用: ${x.spotify.name} ← ${x.seed} / Sonic ${Math.round(x.similarity*100)}%`);
+  }
+}
 const PENDING_SET_KEY="ai_dj_pending_set_v21";
 function savePendingSet(name,seq,summary){
   const payload={
@@ -1154,7 +1249,14 @@ async function discoverUnknown(known,need,globalUris){
     }
   }
 
-  // 3) Only the still-missing discovery slots are allowed to use Spotify Search.
+  // 3) Quota-free fallback: use Spotify tracks already learned from the user's past AI DJ playlists
+  // as a discovery reservoir. These already have Spotify IDs, so this uses ZERO Spotify Search calls.
+  if(resolved.length<need){
+    await resolveFromCachedDiscoveryReservoir(known,resolved,need,globalUris);
+    log(`未知リザーバー後 ${resolved.length}/${need}`);
+  }
+
+  // 4) Only the still-missing discovery slots are allowed to use Spotify Search.
   // Stop immediately on the first QUOTA_EXCEEDED.
   let searchBudget=Math.max(0,need-resolved.length);
   for(const c of candidates){
@@ -1659,7 +1761,7 @@ async function generate(){
       await enrichFreqBlog(unknown.filter(x=>!x.mix),"未知候補");
       await enrichEmbeddings(unknown);
       if(unknown.length===0){
-        log("警告: 未知曲が0曲です。FreqBlog類似候補のSpotify ID/キャッシュ不足、またはSpotify quota超過の可能性があります。");
+        log("警告: 未知曲が0曲です。FreqBlog類似候補・未知リザーバーともにusable不足です。Spotify Search quotaが回復するまで候補キャッシュを増やす必要があります。");
       }else if(unknown.length<unknownTarget){
         log(`警告: 未知曲が不足 ${unknown.length}/${unknownTarget}。不足分は既知曲で補充します。`);
       }
@@ -1712,7 +1814,7 @@ async function generate(){
     const summary=`${seq.length}曲 / 既知${finalKnown.length} / 未知${unknown.length} / 平均Mix ${avg}/100`;
     savePendingSet(name,seq,summary);
     const unknownNote=unknownTarget>0&&unknown.length<unknownTarget
-      ? `<br><span class="warn">未知は目標${unknownTarget}曲中${unknown.length}曲。ログの「未知Spotify検索」「quota超過」を確認してください。</span>`
+      ? `<br><span class="warn">未知は目標${unknownTarget}曲中${unknown.length}曲。ログの「未知リザーバー採用」「未知Spotify検索」を確認してください。</span>`
       : "";
     summaryEl.innerHTML=`<b>${summary}</b><br><span class="small">v21は候補を多めに解析し、繋ぎにくい曲を最終セットから外します。未知不足時は既知で補充します。</span>${unknownNote}`;
     progressEl.textContent="ローカル生成完了";
